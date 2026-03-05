@@ -1,0 +1,1488 @@
+{
+  "info": {
+    "name": "Bambu Lab API",
+    "description": "Auto-discovered API for Bambu Lab / Bambu Handy app",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{bambu_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://api.bambulab.com/v1"
+    },
+    {
+      "key": "bambu_token",
+      "value": "YOUR_TOKEN_HERE"
+    }
+  ],
+  "item": [
+    {
+      "name": "aftersale-service",
+      "item": [
+        {
+          "name": "POST /aftersale-service/makerworld/totalunreadcount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/aftersale-service/makerworld/totalunreadcount",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "aftersale-service",
+                "makerworld",
+                "totalunreadcount"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /aftersale-service/trouble/totalunreadcount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/aftersale-service/trouble/totalunreadcount",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "aftersale-service",
+                "trouble",
+                "totalunreadcount"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "analysis-st",
+      "item": [
+        {
+          "name": "GET /analysis-st/tag/",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/analysis-st/tag/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "analysis-st",
+                "tag"
+              ],
+              "query": [
+                {
+                  "key": "UID",
+                  "value": "65c31ea0-cd74-11ed-b18f-39cf197fa3d4",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "comment-service",
+      "item": [
+        {
+          "name": "POST /comment-service/comment/{id}/like",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/comment-service/comment/{id}/like",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "comment-service",
+                "comment",
+                "{id}",
+                "like"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /comment-service/comment/{id}/reply",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/comment-service/comment/{id}/reply",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "comment-service",
+                "comment",
+                "{id}",
+                "reply"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /comment-service/comment/{id}/detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/comment-service/comment/{id}/detail",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "comment-service",
+                "comment",
+                "{id}",
+                "detail"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /comment-service/commentandrating",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/comment-service/commentandrating",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "comment-service",
+                "commentandrating"
+              ],
+              "query": [
+                {
+                  "key": "designId",
+                  "value": "2358777",
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                },
+                {
+                  "key": "type",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "sort",
+                  "value": "0",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /comment-service/messagesession/list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/comment-service/messagesession/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "comment-service",
+                "messagesession",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "userSelect",
+                  "value": "all",
+                  "description": ""
+                },
+                {
+                  "key": "typeSelect",
+                  "value": "all",
+                  "description": ""
+                },
+                {
+                  "key": "projectScope",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "2",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /comment-service/rating/inst/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/comment-service/rating/inst/{id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "comment-service",
+                "rating",
+                "inst",
+                "{id}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "design-recommend-service",
+      "item": [
+        {
+          "name": "GET /design-recommend-service/my/for-you",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-recommend-service/my/for-you",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-recommend-service",
+                "my",
+                "for-you"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "seed",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "acceptTypes",
+                  "value": "0,2,5,6,3",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "design-service",
+      "item": [
+        {
+          "name": "GET /design-service/design/{id}/remixed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/design/{id}/remixed",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "design",
+                "{id}",
+                "remixed"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /design-service/design/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/design/{id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "design",
+                "{id}"
+              ],
+              "query": [
+                {
+                  "key": "trafficSource",
+                  "value": "recommend",
+                  "description": ""
+                },
+                {
+                  "key": "visitHistory",
+                  "value": "true",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /design-service/draft/sliceerror",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/draft/sliceerror",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "draft",
+                "sliceerror"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /design-service/favorites/designs/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/favorites/designs/{id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "favorites",
+                "designs",
+                "{id}"
+              ],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /design-service/instance/{id}/f3mf",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/instance/{id}/f3mf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "instance",
+                "{id}",
+                "f3mf"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "preview",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /design-service/my/design/favoriteslist",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/my/design/favoriteslist",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "my",
+                "design",
+                "favoriteslist"
+              ],
+              "query": [
+                {
+                  "key": "designId",
+                  "value": "2358777",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /design-service/my/design/like",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-service/my/design/like",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-service",
+                "my",
+                "design",
+                "like"
+              ],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "design-user-service",
+      "item": [
+        {
+          "name": "GET /design-user-service/my/preference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-user-service/my/preference",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-user-service",
+                "my",
+                "preference"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /design-user-service/my/profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/design-user-service/my/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "design-user-service",
+                "my",
+                "profile"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "iot-service",
+      "item": [
+        {
+          "name": "GET /iot-service/api/slicer/resource",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/slicer/resource",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "slicer",
+                "resource"
+              ],
+              "query": [
+                {
+                  "key": "slicer/info/bbl",
+                  "value": "01.00.00.04",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /iot-service/api/slicer/setting",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/slicer/setting",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "slicer",
+                "setting"
+              ],
+              "query": [
+                {
+                  "key": "version",
+                  "value": "1.0.0.1",
+                  "description": ""
+                },
+                {
+                  "key": "public",
+                  "value": "false",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /iot-service/api/user/applications/{token}/cert",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/user/applications/{token}/cert",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "user",
+                "applications",
+                "{token}",
+                "cert"
+              ],
+              "query": [
+                {
+                  "key": "aes256",
+                  "value": "ViXLbxLlpySiAu213oN2EjKWdOiocbew55eZNF9x06wkcWoI5pXE9fmQS1nqPnVJQRNoMK0k3XorwZ0CKTcA_5MFRr-U-Dwkkm7RFcwFjGiQCeb_wNkEqttQ4FiZH5ucKdHdk9vBhvBGU3rVInkUDZNxsjFV2joqTr9GkudF2jBDIavg7Vr4SPH0-w6C_o9G8muPzfV36h5PkiX1HMhcsivrBux3CbSbpG6ktnAu3dZoWWRo3Hunw3xTC4YKzo3Axwa3A5WRSfhsofZdPMSQaQOb49sGma07uK7Hd2BYDl2LNHC3KCF0PxMnxAZrdcfYFMmBwwNkrX8GdopH95wTcw==",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /iot-service/api/user/bind",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/user/bind",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "user",
+                "bind"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /iot-service/api/user/profile/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/user/profile/{id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "user",
+                "profile",
+                "{id}"
+              ],
+              "query": [
+                {
+                  "key": "model_id",
+                  "value": "USf86740b8413939",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /iot-service/api/user/task/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/user/task/{id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "user",
+                "task",
+                "{id}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /iot-service/api/user/ttcode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/iot-service/api/user/ttcode",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "iot-service",
+                "api",
+                "user",
+                "ttcode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "operation-service",
+      "item": [
+        {
+          "name": "GET /operation-service/apphomepage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/operation-service/apphomepage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "operation-service",
+                "apphomepage"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /operation-service/configuration",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/operation-service/configuration",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "operation-service",
+                "configuration"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "point-service",
+      "item": [
+        {
+          "name": "GET /point-service/boost/boostdesign",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/point-service/boost/boostdesign",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "point-service",
+                "boost",
+                "boostdesign"
+              ],
+              "query": [
+                {
+                  "key": "designId",
+                  "value": "2358777",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "report-service",
+      "item": [
+        {
+          "name": "GET /report-service/report/classification",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/report-service/report/classification",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "report-service",
+                "report",
+                "classification"
+              ],
+              "query": [
+                {
+                  "key": "source",
+                  "value": "message",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "search-service",
+      "item": [
+        {
+          "name": "GET /search-service/design/{id}/relate",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search-service/design/{id}/relate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "search-service",
+                "design",
+                "{id}",
+                "relate"
+              ],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                },
+                {
+                  "key": "scene",
+                  "value": "1",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /search-service/homepage/nav",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search-service/homepage/nav",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "search-service",
+                "homepage",
+                "nav"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /search-service/recommand/youlike",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search-service/recommand/youlike",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "search-service",
+                "recommand",
+                "youlike"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /search-service/select/design/nav",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search-service/select/design/nav",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "search-service",
+                "select",
+                "design",
+                "nav"
+              ],
+              "query": [
+                {
+                  "key": "navKey",
+                  "value": "Trending",
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "task-service",
+      "item": [
+        {
+          "name": "GET /task-service/user/taskv2/multi",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/task-service/user/taskv2/multi",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "task-service",
+                "user",
+                "taskv2",
+                "multi"
+              ],
+              "query": [
+                {
+                  "key": "taskNames",
+                  "value": "app_newbie_task_v2,app_newbie_task_v3",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "user-service",
+      "item": [
+        {
+          "name": "GET /user-service/latest/app",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/latest/app",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "latest",
+                "app"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/message/count",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/message/count",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "message",
+                "count"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /user-service/my/message/device/tasks/read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/message/device/tasks/read",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "message",
+                "device",
+                "tasks",
+                "read"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/message/device/taskstatus",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/message/device/taskstatus",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "message",
+                "device",
+                "taskstatus"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/message/latest",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/message/latest",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "message",
+                "latest"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /user-service/my/message/read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/message/read",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "message",
+                "read"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "1",
+                  "description": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/model/profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/model/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "model",
+                "profile"
+              ],
+              "query": [
+                {
+                  "key": "profileId",
+                  "value": "635995371",
+                  "description": ""
+                },
+                {
+                  "key": "modelId",
+                  "value": "US932767835d32ea",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/task/{id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/task/{id}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "task",
+                "{id}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /user-service/my/task/printedplates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/my/task/printedplates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "my",
+                "task",
+                "printedplates"
+              ],
+              "query": [
+                {
+                  "key": "instanceId",
+                  "value": "2626238",
+                  "description": ""
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /user-service/user/devicetoken",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-service/user/devicetoken",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "user-service",
+                "user",
+                "devicetoken"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "app2",
+      "item": [
+        {
+          "name": "POST /app2/home",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/app2/home",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "app2",
+                "home"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST /app2/makerworld",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/app2/makerworld",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "app2",
+                "makerworld"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

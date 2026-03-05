@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apkre"
+version = "0.1.0"
+description = "APK Reverse Engineering Platform — automated API discovery from Android apps"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Timothy Schwarz"},
+]
+keywords = ["apk", "reverse-engineering", "api-discovery", "frida", "android", "openapi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "typer[all]>=0.12",
+    "rich>=13.0",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+]
+
+[project.optional-dependencies]
+# Core dynamic analysis — requires rooted device + frida-server
+frida = [
+    "frida>=17.0",
+]
+# mitmproxy integration for Java/OkHttp traffic capture
+mitmproxy = [
+    "mitmproxy>=10.0",
+]
+# Schema inference from captured JSON bodies
+schema = [
+    "genson>=1.3",
+    "jsonschema>=4.21",
+]
+# All optional dependencies
+all = [
+    "frida>=17.0",
+    "mitmproxy>=10.0",
+    "genson>=1.3",
+    "jsonschema>=4.21",
+]
+
+[project.urls]
+Homepage = "https://github.com/schwarztim/apkre"
+Repository = "https://github.com/schwarztim/apkre"
+Issues = "https://github.com/schwarztim/apkre/issues"
+
+[project.scripts]
+apkre = "apkre.__main__:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apkre*"]
+
+[tool.setuptools.package-data]
+apkre = ["dynamic/*.js"]

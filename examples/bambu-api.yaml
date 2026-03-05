@@ -1,0 +1,972 @@
+openapi: 3.0.3
+info:
+  title: Bambu Lab API
+  description: API specification for Bambu Lab services (bbl.intl.bambulab.com / Bambu Handy app). Auto-discovered via apkre.
+  version: 1.0.0-discovered
+servers:
+- url: https://api.bambulab.com/v1
+  description: Production API
+- url: https://event.bblmw.com
+  description: Analytics/Events
+security:
+- bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /aftersale-service/makerworld/totalunreadcount:
+    post:
+      tags:
+      - aftersale-service
+      summary: POST /aftersale-service/makerworld/totalunreadcount
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: After-sale support, trouble tickets
+  /aftersale-service/trouble/totalunreadcount:
+    post:
+      tags:
+      - aftersale-service
+      summary: POST /aftersale-service/trouble/totalunreadcount
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: After-sale support, trouble tickets
+  /analysis-st/tag/:
+    get:
+      tags:
+      - analysis-st
+      summary: GET /analysis-st/tag/
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: UID
+        in: query
+        schema:
+          type: string
+        example: 65c31ea0-cd74-11ed-b18f-39cf197fa3d4
+      description: Analytics and tracking tags
+  /comment-service/comment/{id}/like:
+    post:
+      tags:
+      - comment-service
+      summary: POST /comment-service/comment/{id}/like
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: Comments, ratings, message sessions
+  /comment-service/comment/{id}/reply:
+    get:
+      tags:
+      - comment-service
+      summary: GET /comment-service/comment/{id}/reply
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: Comments, ratings, message sessions
+  /comment-service/comment/{id}/detail:
+    get:
+      tags:
+      - comment-service
+      summary: GET /comment-service/comment/{id}/detail
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: Comments, ratings, message sessions
+  /comment-service/commentandrating:
+    get:
+      tags:
+      - comment-service
+      summary: GET /comment-service/commentandrating
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: designId
+        in: query
+        schema:
+          type: string
+        example: '2358777'
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      - name: type
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: sort
+        in: query
+        schema:
+          type: string
+        example: '0'
+      description: Comments, ratings, message sessions
+  /comment-service/messagesession/list:
+    get:
+      tags:
+      - comment-service
+      summary: GET /comment-service/messagesession/list
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: userSelect
+        in: query
+        schema:
+          type: string
+        example: all
+      - name: typeSelect
+        in: query
+        schema:
+          type: string
+        example: all
+      - name: projectScope
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '2'
+      description: Comments, ratings, message sessions
+  /comment-service/rating/inst/{id}:
+    get:
+      tags:
+      - comment-service
+      summary: GET /comment-service/rating/inst/{id}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: Comments, ratings, message sessions
+  /design-recommend-service/my/for-you:
+    get:
+      tags:
+      - design-recommend-service
+      summary: GET /design-recommend-service/my/for-you
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: seed
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: acceptTypes
+        in: query
+        schema:
+          type: string
+        example: 0,2,5,6,3
+      description: Personalized design recommendations
+  /design-service/design/{id}/remixed:
+    get:
+      tags:
+      - design-service
+      summary: GET /design-service/design/{id}/remixed
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: 3D model designs, favorites, slicing
+  /design-service/design/{id}:
+    get:
+      tags:
+      - design-service
+      summary: GET /design-service/design/{id}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      - name: trafficSource
+        in: query
+        schema:
+          type: string
+        example: recommend
+      - name: visitHistory
+        in: query
+        schema:
+          type: string
+        example: 'true'
+      description: 3D model designs, favorites, slicing
+  /design-service/draft/sliceerror:
+    get:
+      tags:
+      - design-service
+      summary: GET /design-service/draft/sliceerror
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: 3D model designs, favorites, slicing
+  /design-service/favorites/designs/{id}:
+    get:
+      tags:
+      - design-service
+      summary: GET /design-service/favorites/designs/{id}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      description: 3D model designs, favorites, slicing
+  /design-service/instance/{id}/f3mf:
+    get:
+      tags:
+      - design-service
+      summary: GET /design-service/instance/{id}/f3mf
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      - name: type
+        in: query
+        schema:
+          type: string
+        example: preview
+      description: 3D model designs, favorites, slicing
+  /design-service/my/design/favoriteslist:
+    get:
+      tags:
+      - design-service
+      summary: GET /design-service/my/design/favoriteslist
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: designId
+        in: query
+        schema:
+          type: string
+        example: '2358777'
+      description: 3D model designs, favorites, slicing
+  /design-service/my/design/like:
+    post:
+      tags:
+      - design-service
+      summary: POST /design-service/my/design/like
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      description: 3D model designs, favorites, slicing
+  /design-user-service/my/preference:
+    get:
+      tags:
+      - design-user-service
+      summary: GET /design-user-service/my/preference
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User design profile and preferences
+  /design-user-service/my/profile:
+    get:
+      tags:
+      - design-user-service
+      summary: GET /design-user-service/my/profile
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User design profile and preferences
+  /iot-service/api/slicer/resource:
+    get:
+      tags:
+      - iot-service
+      summary: GET /iot-service/api/slicer/resource
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: slicer/info/bbl
+        in: query
+        schema:
+          type: string
+        example: 01.00.00.04
+      description: IoT device management, printer binding, slicer settings
+  /iot-service/api/slicer/setting:
+    get:
+      tags:
+      - iot-service
+      summary: GET /iot-service/api/slicer/setting
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: version
+        in: query
+        schema:
+          type: string
+        example: 1.0.0.1
+      - name: public
+        in: query
+        schema:
+          type: string
+        example: 'false'
+      description: IoT device management, printer binding, slicer settings
+  /iot-service/api/user/applications/{token}/cert:
+    get:
+      tags:
+      - iot-service
+      summary: GET /iot-service/api/user/applications/{token}/cert
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: token
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Application token or certificate reference
+      - name: aes256
+        in: query
+        schema:
+          type: string
+        example: ViXLbxLlpySiAu213oN2EjKWdOiocbew55eZNF9x06wkcWoI5pXE9fmQS1nqPnVJQRNoMK0k3XorwZ0CKTcA_5MFRr-U-Dwkkm7RFcwFjGiQCeb_wNkEqttQ4FiZH5ucKdHdk9vBhvBGU3rVInkUDZNxsjFV2joqTr9GkudF2jBDIavg7Vr4SPH0-w6C_o9G8muPzfV36h5PkiX1HMhcsivrBux3CbSbpG6ktnAu3dZoWWRo3Hunw3xTC4YKzo3Axwa3A5WRSfhsofZdPMSQaQOb49sGma07uK7Hd2BYDl2LNHC3KCF0PxMnxAZrdcfYFMmBwwNkrX8GdopH95wTcw==
+      description: IoT device management, printer binding, slicer settings
+  /iot-service/api/user/bind:
+    get:
+      tags:
+      - iot-service
+      summary: GET /iot-service/api/user/bind
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: IoT device management, printer binding, slicer settings
+  /iot-service/api/user/profile/{id}:
+    get:
+      tags:
+      - iot-service
+      summary: GET /iot-service/api/user/profile/{id}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      - name: model_id
+        in: query
+        schema:
+          type: string
+        example: USf86740b8413939
+      description: IoT device management, printer binding, slicer settings
+  /iot-service/api/user/task/{id}:
+    get:
+      tags:
+      - iot-service
+      summary: GET /iot-service/api/user/task/{id}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: IoT device management, printer binding, slicer settings
+  /iot-service/api/user/ttcode:
+    post:
+      tags:
+      - iot-service
+      summary: POST /iot-service/api/user/ttcode
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: IoT device management, printer binding, slicer settings
+  /operation-service/apphomepage:
+    get:
+      tags:
+      - operation-service
+      summary: GET /operation-service/apphomepage
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: App configuration, homepage content
+  /operation-service/configuration:
+    get:
+      tags:
+      - operation-service
+      summary: GET /operation-service/configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: App configuration, homepage content
+  /point-service/boost/boostdesign:
+    get:
+      tags:
+      - point-service
+      summary: GET /point-service/boost/boostdesign
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: designId
+        in: query
+        schema:
+          type: string
+        example: '2358777'
+      description: Points/rewards, design boost
+  /report-service/report/classification:
+    get:
+      tags:
+      - report-service
+      summary: GET /report-service/report/classification
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: source
+        in: query
+        schema:
+          type: string
+        example: message
+      description: Content reporting/moderation
+  /search-service/design/{id}/relate:
+    get:
+      tags:
+      - search-service
+      summary: GET /search-service/design/{id}/relate
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      - name: scene
+        in: query
+        schema:
+          type: string
+        example: '1'
+      description: Design search, navigation, recommendations
+  /search-service/homepage/nav:
+    get:
+      tags:
+      - search-service
+      summary: GET /search-service/homepage/nav
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: Design search, navigation, recommendations
+  /search-service/recommand/youlike:
+    post:
+      tags:
+      - search-service
+      summary: POST /search-service/recommand/youlike
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: Design search, navigation, recommendations
+  /search-service/select/design/nav:
+    get:
+      tags:
+      - search-service
+      summary: GET /search-service/select/design/nav
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: navKey
+        in: query
+        schema:
+          type: string
+        example: Trending
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      description: Design search, navigation, recommendations
+  /task-service/user/taskv2/multi:
+    get:
+      tags:
+      - task-service
+      summary: GET /task-service/user/taskv2/multi
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: taskNames
+        in: query
+        schema:
+          type: string
+        example: app_newbie_task_v2,app_newbie_task_v3
+      description: User tasks and achievements
+  /user-service/latest/app:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/latest/app
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /user-service/my/message/count:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/message/count
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /user-service/my/message/device/tasks/read:
+    post:
+      tags:
+      - user-service
+      summary: POST /user-service/my/message/device/tasks/read
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /user-service/my/message/device/taskstatus:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/message/device/taskstatus
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /user-service/my/message/latest:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/message/latest
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /user-service/my/message/read:
+    post:
+      tags:
+      - user-service
+      summary: POST /user-service/my/message/read
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /user-service/my/messages:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/messages
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: type
+        in: query
+        schema:
+          type: string
+        example: '1'
+      - name: offset
+        in: query
+        schema:
+          type: string
+        example: '0'
+      - name: limit
+        in: query
+        schema:
+          type: string
+        example: '20'
+      description: User accounts, messages, notifications, task history
+  /user-service/my/model/profile:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/model/profile
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: profileId
+        in: query
+        schema:
+          type: string
+        example: '635995371'
+      - name: modelId
+        in: query
+        schema:
+          type: string
+        example: US932767835d32ea
+      description: User accounts, messages, notifications, task history
+  /user-service/my/task/{id}:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/task/{id}
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Resource identifier
+      description: User accounts, messages, notifications, task history
+  /user-service/my/task/printedplates:
+    get:
+      tags:
+      - user-service
+      summary: GET /user-service/my/task/printedplates
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      parameters:
+      - name: instanceId
+        in: query
+        schema:
+          type: string
+        example: '2626238'
+      description: User accounts, messages, notifications, task history
+  /user-service/user/devicetoken:
+    post:
+      tags:
+      - user-service
+      summary: POST /user-service/user/devicetoken
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+      description: User accounts, messages, notifications, task history
+  /app2/home:
+    post:
+      tags:
+      - app2
+      summary: POST /app2/home
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+  /app2/makerworld:
+    post:
+      tags:
+      - app2
+      summary: POST /app2/makerworld
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+x-protocols:
+  mqtt:
+    description: Bambu Lab printers communicate via MQTT for real-time status, commands, and telemetry
+    topics:
+      device/{deviceId}/report: Device status reports (temperature, print progress, AMS filament)
+      device/{deviceId}/request: Commands sent to printer
+    commands:
+      app_cert_list: List application certificates for device auth
+      extrusion_cali_sel: Select filament for extrusion calibration
+    auth: RSA_SHA256 signed payloads with device certificates
