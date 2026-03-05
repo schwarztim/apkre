@@ -22,6 +22,7 @@ from apkre.output.postman_builder import PostmanBuilder
 from apkre.output.curl_builder import CurlBuilder
 from apkre.device.prereq_check import PrereqChecker
 from apkre.device.setup import DeviceSetup
+from apkre.dynamic.ai_explorer import ANTHROPIC_AVAILABLE
 from apkre.session import Session
 
 app = typer.Typer(
@@ -105,6 +106,7 @@ def analyze(
     static_only: bool = typer.Option(False, "--static-only", help="Skip dynamic capture"),
     dynamic_only: bool = typer.Option(False, "--dynamic-only", help="Skip static analysis"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive capture: press Ctrl+C when done"),
+    ai: bool = typer.Option(False, "--ai", help="AI-driven exploration: Claude autonomously navigates the app"),
     timeout: int = typer.Option(300, "--timeout", help="Dynamic capture timeout in seconds"),
     skip_prereqs: bool = typer.Option(False, "--skip-prereqs", help="Skip prerequisite checks"),
 ) -> None:
@@ -170,29 +172,74 @@ def analyze(
             session.package_name = pkg
         console.print(f"  [green]✓[/green] Package: {pkg}")
 
-        # Logcat tap (fastest for Flutter/Dio apps)
-        console.print("  [yellow]→[/yellow] Starting logcat tap...")
-        logcat = LogcatTap(device, console)
-        logcat_endpoints = logcat.capture(
-            timeout=min(timeout, 120) if interactive else min(timeout, 60),
-            interactive=interactive,
-        )
-        console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
-        endpoints.extend(logcat_endpoints)
+        if ai:
+            # AI-driven exploration: background capture + Claude navigation
+            if not ANTHROPIC_AVAILABLE:
+                console.print("[red]anthropic SDK not installed. Run: pip install 'apkre[ai]'[/red]")
+                raise typer.Exit(1)
 
-        # Frida SSL hook (universal)
-        frida_ctl = FridaController(device, pkg, console)
-        frida_mode = "attach" if interactive else "spawn"
-        console.print(f"  [yellow]→[/yellow] Frida SSL hooks ({frida_mode} mode)...")
-        try:
-            frida_endpoints = frida_ctl.capture(timeout=timeout, mode=frida_mode)
+            from apkre.dynamic.ai_explorer import AiExplorer
+
+            console.print("  [yellow]→[/yellow] Starting background logcat + Frida capture...")
+            logcat = LogcatTap(device, console)
+            logcat.start()
+
+            frida_ctl = FridaController(device, pkg, console)
+            console.print("  [yellow]→[/yellow] Frida SSL hooks (attach mode)...")
+            try:
+                frida_ctl.start_background(mode="attach")
+            except Exception as e:
+                console.print(f"  [red]✗[/red] Frida background start failed: {e}")
+                console.print("  [dim]Continuing with logcat only...[/dim]")
+
+            def _endpoint_count():
+                return len(logcat._lines) + len(frida_ctl._endpoints)
+
+            console.print("  [yellow]→[/yellow] Starting AI exploration...")
+            explorer = AiExplorer(
+                device, pkg, console,
+                max_iterations=50,
+                stale_threshold=8,
+                timeout=timeout,
+            )
+            explorer.explore(endpoint_counter=_endpoint_count)
+
+            # Collect results
+            logcat_endpoints = logcat.stop()
+            console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
+            endpoints.extend(logcat_endpoints)
+
+            frida_endpoints = frida_ctl.stop_background()
             console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
             endpoints.extend(frida_endpoints)
             if frida_ctl.tokens:
                 session.tokens.extend(frida_ctl.tokens)
-        except Exception as e:
-            console.print(f"  [red]✗[/red] Frida failed: {e}")
-            console.print("  [dim]Continuing with logcat + static results...[/dim]")
+
+        else:
+            # Standard capture: sequential logcat then frida
+            # Logcat tap (fastest for Flutter/Dio apps)
+            console.print("  [yellow]→[/yellow] Starting logcat tap...")
+            logcat = LogcatTap(device, console)
+            logcat_endpoints = logcat.capture(
+                timeout=min(timeout, 120) if interactive else min(timeout, 60),
+                interactive=interactive,
+            )
+            console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
+            endpoints.extend(logcat_endpoints)
+
+            # Frida SSL hook (universal)
+            frida_ctl = FridaController(device, pkg, console)
+            frida_mode = "attach" if interactive else "spawn"
+            console.print(f"  [yellow]→[/yellow] Frida SSL hooks ({frida_mode} mode)...")
+            try:
+                frida_endpoints = frida_ctl.capture(timeout=timeout, mode=frida_mode)
+                console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
+                endpoints.extend(frida_endpoints)
+                if frida_ctl.tokens:
+                    session.tokens.extend(frida_ctl.tokens)
+            except Exception as e:
+                console.print(f"  [red]✗[/red] Frida failed: {e}")
+                console.print("  [dim]Continuing with logcat + static results...[/dim]")
 
         # Token extraction
         console.print("  [yellow]→[/yellow] Extracting auth tokens...")

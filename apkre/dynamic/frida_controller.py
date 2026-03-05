@@ -43,6 +43,78 @@ class FridaController:
         self._tokens: list[str] = []
         self._seen_keys: set[str] = set()
 
+    def start_background(self, mode: str = "attach") -> None:
+        """Start Frida capture in a background daemon thread."""
+        self._bg_stop = Event()
+        self._bg_session = None
+
+        if not FRIDA_AVAILABLE:
+            self.console.print("[red]frida not installed. Run: pip install frida frida-tools[/red]")
+            return
+
+        def _run():
+            try:
+                try:
+                    device = frida.get_device(self.device_serial)
+                except frida.InvalidArgumentError:
+                    device = frida.get_usb_device()
+
+                agent_js = _AGENT_JS.read_text()
+
+                def on_message(message: dict, data) -> None:
+                    if message.get("type") != "send":
+                        return
+                    payload = message.get("payload", {})
+                    mtype = payload.get("type", "")
+                    if mtype in ("ssl_write", "ssl_read"):
+                        self._parse_http_chunk(payload.get("data", ""), mtype)
+                    elif mtype == "okhttp":
+                        url = payload.get("url", "")
+                        parsed = _parse_url(url)
+                        if parsed:
+                            key = f"{payload.get('method','GET')}:{parsed['host']}:{parsed['path']}"
+                            if key not in self._seen_keys:
+                                self._seen_keys.add(key)
+                                self._endpoints.append({
+                                    **parsed,
+                                    "method": payload.get("method", "GET").upper(),
+                                    "source": "frida-okhttp",
+                                    "auth": False,
+                                    "status": payload.get("status"),
+                                })
+                    elif mtype == "token":
+                        val = payload.get("value", "")
+                        if val and val not in self._tokens:
+                            self._tokens.append(val)
+
+                if mode == "attach":
+                    session, pid = self._attach(device, agent_js, on_message)
+                else:
+                    session, pid = self._spawn(device, agent_js, on_message)
+
+                self._bg_session = session
+                self._bg_stop.wait()
+
+                try:
+                    session.detach()
+                except Exception:
+                    pass
+            except Exception as e:
+                self.console.print(f"  [red]Frida background error: {e}[/red]")
+
+        from threading import Thread
+        t = Thread(target=_run, daemon=True)
+        t.start()
+        self._bg_thread = t
+
+    def stop_background(self) -> list[dict]:
+        """Stop background Frida capture and return collected endpoints."""
+        if hasattr(self, '_bg_stop'):
+            self._bg_stop.set()
+        if hasattr(self, '_bg_thread'):
+            self._bg_thread.join(timeout=10)
+        return self._endpoints
+
     def capture(self, timeout: int = 300, mode: str = "spawn") -> list[dict]:
         """Capture traffic via Frida.
 

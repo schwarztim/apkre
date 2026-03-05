@@ -48,12 +48,17 @@ schema = [
     "genson>=1.3",
     "jsonschema>=4.21",
 ]
+# AI-driven dynamic exploration via Claude vision
+ai = [
+    "anthropic>=0.40",
+]
 # All optional dependencies
 all = [
     "frida>=17.0",
     "mitmproxy>=10.0",
     "genson>=1.3",
     "jsonschema>=4.21",
+    "anthropic>=0.40",
 ]
 
 [project.urls]

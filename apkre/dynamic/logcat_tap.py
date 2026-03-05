@@ -44,6 +44,42 @@ class LogcatTap:
     def __init__(self, device: str, console: Console) -> None:
         self.device = device
         self.console = console
+        self._lines: list[str] = []
+        self._stop_flag: list[bool] = [False]
+        self._thread: Thread | None = None
+
+    def start(self) -> None:
+        """Start non-blocking background logcat capture."""
+        self._lines = []
+        self._stop_flag = [False]
+
+        subprocess.run(
+            ["adb", "-s", self.device, "logcat", "-c"],
+            capture_output=True, timeout=10,
+        )
+
+        def reader():
+            cmd = ["adb", "-s", self.device, "logcat", "-s", "flutter:*", "-v", "raw"]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            try:
+                while not self._stop_flag[0]:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    self._lines.append(line)
+            finally:
+                proc.terminate()
+
+        self._thread = Thread(target=reader, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> list[dict]:
+        """Stop background capture and return parsed endpoints."""
+        self._stop_flag[0] = True
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
+        return self._parse_lines(self._lines)
 
     def capture(self, timeout: int = 60, interactive: bool = False) -> list[dict]:
         """Stream logcat for `timeout` seconds, parse Dio log entries.
