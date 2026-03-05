@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import time
 from pathlib import Path
 from threading import Event
@@ -25,11 +26,14 @@ _HTTP_REQUEST_RE = re.compile(
 _AUTH_HEADER_RE = re.compile(
     r'^Authorization:\s*(.+)$', re.MULTILINE | re.IGNORECASE,
 )
+_HOST_HEADER_RE = re.compile(
+    r'^Host:\s*(\S+)', re.MULTILINE | re.IGNORECASE,
+)
 _URL_RE = re.compile(r'https?://([^/\s?#]+)(/[^\s?#]*)?')
 
 
 class FridaController:
-    """Spawn an Android app with Frida, inject SSL hooks, collect captured requests."""
+    """Spawn or attach to an Android app with Frida, inject SSL hooks, collect captured requests."""
 
     def __init__(self, device_serial: str, package: str, console: Console) -> None:
         self.device_serial = device_serial
@@ -37,8 +41,15 @@ class FridaController:
         self.console = console
         self._endpoints: list[dict] = []
         self._tokens: list[str] = []
+        self._seen_keys: set[str] = set()
 
-    def capture(self, timeout: int = 300) -> list[dict]:
+    def capture(self, timeout: int = 300, mode: str = "spawn") -> list[dict]:
+        """Capture traffic via Frida.
+
+        mode:
+            "spawn"  — spawn the app fresh (kills existing instance, full control)
+            "attach" — attach to running app (preserves state, no routing breakage)
+        """
         if not FRIDA_AVAILABLE:
             self.console.print("[red]frida not installed. Run: pip install frida frida-tools[/red]")
             return []
@@ -49,8 +60,6 @@ class FridaController:
             device = frida.get_usb_device()
 
         agent_js = _AGENT_JS.read_text()
-        done = Event()
-        http_buffer: dict[str, list[str]] = {}  # correlation: ssl_write chunks
 
         def on_message(message: dict, data: Any) -> None:
             if message.get("type") != "send":
@@ -64,6 +73,12 @@ class FridaController:
             elif mtype == "hook_ok":
                 self.console.print(f"  [green]✓[/green] Hooked: {payload.get('label')}")
 
+            elif mtype == "hook_info":
+                self.console.print(f"  [dim]{payload.get('label')}: {payload.get('msg')}[/dim]")
+
+            elif mtype == "hook_error":
+                self.console.print(f"  [red]Hook error[/red] {payload.get('label')}: {payload.get('error')}")
+
             elif mtype in ("ssl_write", "ssl_read"):
                 chunk = payload.get("data", "")
                 self._parse_http_chunk(chunk, mtype)
@@ -72,13 +87,16 @@ class FridaController:
                 url = payload.get("url", "")
                 parsed = _parse_url(url)
                 if parsed:
-                    self._endpoints.append({
-                        **parsed,
-                        "method": payload.get("method", "GET").upper(),
-                        "source": "frida-okhttp",
-                        "auth": False,
-                        "status": payload.get("status"),
-                    })
+                    key = f"{payload.get('method','GET')}:{parsed['host']}:{parsed['path']}"
+                    if key not in self._seen_keys:
+                        self._seen_keys.add(key)
+                        self._endpoints.append({
+                            **parsed,
+                            "method": payload.get("method", "GET").upper(),
+                            "source": "frida-okhttp",
+                            "auth": False,
+                            "status": payload.get("status"),
+                        })
 
             elif mtype == "token":
                 val = payload.get("value", "")
@@ -86,14 +104,12 @@ class FridaController:
                     self._tokens.append(val)
                     self.console.print(f"  [yellow]★[/yellow] Token captured (len={len(val)})")
 
-        pid = device.spawn([self.package])
-        session = device.attach(pid)
-        script = session.create_script(agent_js)
-        script.on("message", on_message)
-        script.load()
-        device.resume(pid)
+        if mode == "attach":
+            session, pid = self._attach(device, agent_js, on_message)
+        else:
+            session, pid = self._spawn(device, agent_js, on_message)
 
-        self.console.print(f"  App spawned (pid={pid}), capturing for {timeout}s...")
+        self.console.print(f"  App {mode}ed (pid={pid}), capturing for {timeout}s...")
         deadline = time.time() + timeout
         try:
             while time.time() < deadline:
@@ -102,21 +118,72 @@ class FridaController:
             pass
         finally:
             try:
-                script.unload()
                 session.detach()
             except Exception:
                 pass
 
         return self._endpoints
 
+    def _spawn(self, device, agent_js: str, on_message) -> tuple:
+        """Spawn the app fresh and inject agent."""
+        pid = device.spawn([self.package])
+        session = device.attach(pid)
+        script = session.create_script(agent_js)
+        script.on("message", on_message)
+        script.load()
+        device.resume(pid)
+        return session, pid
+
+    def _attach(self, device, agent_js: str, on_message) -> tuple:
+        """Attach to a running app instance (no restart, preserves routing)."""
+        # Find the running PID
+        pid = self._find_pid()
+        if pid is None:
+            self.console.print("  [yellow]![/yellow] App not running, falling back to spawn mode")
+            return self._spawn(device, agent_js, on_message)
+
+        session = device.attach(pid)
+        script = session.create_script(agent_js)
+        script.on("message", on_message)
+        script.load()
+        return session, pid
+
+    def _find_pid(self) -> int | None:
+        """Find PID of running package via adb."""
+        try:
+            result = subprocess.run(
+                ["adb", "-s", self.device_serial, "shell", "pidof", self.package],
+                capture_output=True, text=True, timeout=5,
+            )
+            pid_str = result.stdout.strip()
+            if pid_str:
+                return int(pid_str.split()[0])
+        except Exception:
+            pass
+        return None
+
     def _parse_http_chunk(self, chunk: str, direction: str) -> None:
         """Parse raw HTTP text captured from SSL buffer."""
+        # Extract Host header for path-only requests
+        host_m = _HOST_HEADER_RE.search(chunk)
+        default_host = host_m.group(1) if host_m else ""
+
         for m in _HTTP_REQUEST_RE.finditer(chunk):
             method = m.group(1)
             url_or_path = m.group(2)
-            parsed = _parse_url(url_or_path) if url_or_path.startswith("http") else {"path": url_or_path, "host": ""}
+
+            if url_or_path.startswith("http"):
+                parsed = _parse_url(url_or_path)
+            else:
+                parsed = {"path": url_or_path, "host": default_host}
+
             if not parsed:
                 continue
+
+            key = f"{method}:{parsed['host']}:{parsed['path']}"
+            if key in self._seen_keys:
+                continue
+            self._seen_keys.add(key)
 
             auth = bool(_AUTH_HEADER_RE.search(chunk))
             ep = {
@@ -126,14 +193,14 @@ class FridaController:
                 "auth": auth,
             }
 
-            # Try to extract auth token
+            # Extract auth token
             am = _AUTH_HEADER_RE.search(chunk)
             if am:
                 token_val = am.group(1).strip()
                 if token_val not in self._tokens:
                     self._tokens.append(token_val)
 
-            # Try to extract request body (after blank line)
+            # Extract request body (after blank line)
             body_m = re.search(r'\r?\n\r?\n(.+)', chunk, re.DOTALL)
             if body_m:
                 body_text = body_m.group(1).strip()

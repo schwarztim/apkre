@@ -132,7 +132,7 @@ apkre/
 │   └── dart_scanner.py      # Flutter/Dart AOT binary scanning
 ├── dynamic/
 │   ├── frida_agent.js       # Frida 17.x SSL hooks (system + BoringSSL)
-│   ├── frida_controller.py  # Spawn, inject, collect
+│   ├── frida_controller.py  # Spawn/attach, inject, collect
 │   ├── logcat_tap.py        # Flutter Dio log parser with interactive mode
 │   ├── mitmproxy_tap.py     # mitmproxy flow capture
 │   └── token_extractor.py   # Heap dump + SharedPrefs + Frida prefs
@@ -150,25 +150,69 @@ apkre/
 └── session.py               # SQLite session persistence
 ```
 
+## Flutter SSL Interception
+
+Flutter apps use BoringSSL statically linked in `libflutter.so` with stripped symbols. apkre uses a three-tier strategy:
+
+### Tier 1: Exported Symbols (debug builds)
+
+Standard `SSL_write`/`SSL_read` export lookup — works on debug and some custom builds.
+
+### Tier 2: ARM64 ADRP+ADD Cross-Reference Resolution (stripped release builds)
+
+BoringSSL embeds error-reporting strings (`"SSL_write\0"`, `"SSL_read\0"`) even in stripped builds. apkre's Frida agent:
+
+1. Finds these strings via `Memory.scanSync`
+2. Scans `.text` for ARM64 ADRP instructions targeting the string's page
+3. Validates the following ADD instruction matches the page offset
+4. Walks backwards from the xref to find the function prologue (`STP X29, X30, [SP, #-N]!`)
+5. Hooks at the resolved function address
+
+### Tier 3: Prologue Pattern Scan (fallback)
+
+Searches for functions with `STP X29, X30` + `CBZ X0` (SSL null-check) pattern that also reference the target string within their body.
+
+### Tier 4: reFlutter APK Patching (nuclear option)
+
+If all runtime approaches fail:
+
+```bash
+apkre patch --apk app.apk --proxy 10.0.0.1
+# Rewrites libflutter.so to disable cert verification
+# Redirects all Dart HTTP traffic through your proxy
+adb install app_patched.apk
+mitmdump -p 8080 --ssl-insecure
+apkre analyze --package com.example.app --interactive
+```
+
+## Frida Modes
+
+| Mode       | Flag            | Use When                                    |
+| ---------- | --------------- | ------------------------------------------- |
+| **Spawn**  | (default)       | Fresh capture, need full app lifecycle      |
+| **Attach** | `--interactive` | App already running, preserve routing/state |
+
+Attach mode hooks the running process without restarting it — critical for LineageOS/AOSP where Frida spawn breaks WiFi routing tables.
+
 ## Known Limitations
 
-- **Flutter BoringSSL** — release builds strip all BoringSSL symbols from `libflutter.so`. The pattern scanner can locate the strings but ARM64 cross-reference resolution is not yet automated. Use `reFlutter` for patching release builds.
-- **Dart HTTP bypasses system proxy** — Dart's HTTP client ignores Android's global proxy setting. Logcat capture (for debug builds) or Frida SSL hooks are required.
+- **Dart HTTP bypasses system proxy** — Dart's HTTP client ignores Android's global proxy setting. Use logcat capture, Frida SSL hooks, or `apkre patch` with mitmproxy.
 - **Split APKs** — requires a connected device to pull arch-specific splits containing native libraries.
-- **AOSP/LineageOS routing** — Frida spawn mode can break WiFi routing tables. Interactive mode avoids this by not using Frida spawn.
+- **ARM64 only** — BoringSSL pattern scanning currently targets ARM64 (aarch64). x86/x86_64 emulators need different instruction patterns.
 
 ## Device Notes
 
 ### LineageOS / Custom ROMs
 
 - ADB root (`uid=0`) is default — no `su` binary needed
-- WiFi routing tables break when Frida spawns apps. Use `--interactive` mode or run `apkre device-setup` to fix routing.
+- WiFi routing tables break when Frida spawns apps. Use `--interactive` mode (uses attach) or run `apkre device-setup` to fix routing.
 - Clock sync is critical — SSL cert validation fails if device clock drifts
 
 ### Emulators
 
 - Works with standard Android emulators (AVD) with root access
 - `frida-server` must match your architecture (x86_64 for emulator, arm64 for physical device)
+- BoringSSL pattern scanning works best on ARM64 devices; emulators may need `apkre patch` instead
 
 ## License
 

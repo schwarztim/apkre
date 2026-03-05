@@ -181,19 +181,18 @@ def analyze(
         endpoints.extend(logcat_endpoints)
 
         # Frida SSL hook (universal)
-        if not interactive:
-            # In interactive mode, skip Frida spawn (it restarts the app and kills routing)
-            console.print("  [yellow]→[/yellow] Spawning app with Frida SSL hooks...")
-            frida_ctl = FridaController(device, pkg, console)
-            try:
-                frida_endpoints = frida_ctl.capture(timeout=timeout)
-                console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
-                endpoints.extend(frida_endpoints)
-                if frida_ctl.tokens:
-                    session.tokens.extend(frida_ctl.tokens)
-            except Exception as e:
-                console.print(f"  [red]✗[/red] Frida failed: {e}")
-                console.print("  [dim]Continuing with logcat + static results...[/dim]")
+        frida_ctl = FridaController(device, pkg, console)
+        frida_mode = "attach" if interactive else "spawn"
+        console.print(f"  [yellow]→[/yellow] Frida SSL hooks ({frida_mode} mode)...")
+        try:
+            frida_endpoints = frida_ctl.capture(timeout=timeout, mode=frida_mode)
+            console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
+            endpoints.extend(frida_endpoints)
+            if frida_ctl.tokens:
+                session.tokens.extend(frida_ctl.tokens)
+        except Exception as e:
+            console.print(f"  [red]✗[/red] Frida failed: {e}")
+            console.print("  [dim]Continuing with logcat + static results...[/dim]")
 
         # Token extraction
         console.print("  [yellow]→[/yellow] Extracting auth tokens...")
@@ -271,6 +270,70 @@ def device_setup(
     setup.fix_routing()
     setup.set_proxy(proxy_host, proxy_port)
     console.print("[green]Device setup complete.[/green]")
+
+
+@app.command()
+def patch(
+    apk: str = typer.Option(..., "--apk", help="Path to the APK file to patch"),
+    output: str = typer.Option(None, "--output", "-o", help="Output patched APK path"),
+    proxy: str = typer.Option("10.0.0.1", "--proxy", help="Proxy IP for traffic redirection"),
+    proxy_port: int = typer.Option(8080, "--proxy-port", help="Proxy port"),
+) -> None:
+    """[bold yellow]Patch a Flutter APK with reFlutter for SSL interception.[/bold yellow]
+
+    Rewrites libflutter.so to disable SSL verification and redirect traffic
+    through a proxy. Requires reFlutter and apktool.
+    """
+    import shutil
+
+    if not shutil.which("reflutter"):
+        console.print("[red]reFlutter not found. Install: pip install reflutter[/red]")
+        raise typer.Exit(1)
+
+    apk_path = Path(apk)
+    if not apk_path.exists():
+        console.print(f"[red]APK not found: {apk}[/red]")
+        raise typer.Exit(1)
+
+    if not output:
+        output = str(apk_path.with_stem(apk_path.stem + "_patched"))
+
+    console.print(f"  [yellow]→[/yellow] Patching {apk_path.name} with reFlutter...")
+    console.print(f"  [dim]Proxy: {proxy}:{proxy_port}[/dim]")
+
+    # reFlutter patches libflutter.so to redirect traffic and disable cert verification
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        result = subprocess.run(
+            ["reflutter", str(apk_path)],
+            capture_output=True, text=True, timeout=300,
+            input=f"{proxy}\n",  # reFlutter prompts for proxy IP
+            cwd=tmp,
+        )
+
+        if result.returncode != 0:
+            console.print(f"[red]reFlutter failed:[/red]\n{result.stderr}")
+            raise typer.Exit(1)
+
+        # reFlutter outputs to current dir with "release" in the name
+        patched_candidates = list(Path(tmp).glob("*release*.apk"))
+        if not patched_candidates:
+            patched_candidates = list(Path(tmp).glob("*.apk"))
+
+        if not patched_candidates:
+            console.print("[red]reFlutter did not produce a patched APK[/red]")
+            console.print(f"[dim]stdout: {result.stdout[:500]}[/dim]")
+            raise typer.Exit(1)
+
+        patched = patched_candidates[0]
+        shutil.copy2(patched, output)
+
+    console.print(f"  [green]✓[/green] Patched APK → {output}")
+    console.print()
+    console.print("[bold]Next steps:[/bold]")
+    console.print(f"  1. Install: adb install {output}")
+    console.print(f"  2. Start mitmproxy: mitmdump -p {proxy_port} --ssl-insecure")
+    console.print(f"  3. Run: apkre analyze --apk {output} --interactive")
 
 
 def _print_summary(endpoints: list[dict], spec_path: str, session: Session) -> None:
