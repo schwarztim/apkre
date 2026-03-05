@@ -156,6 +156,8 @@ class AiExplorer:
         stale_count = 0
         last_ep_count = endpoint_counter()
 
+        anr_count = 0
+
         for i in range(1, self.max_iterations + 1):
             if time.time() > deadline:
                 self.console.print(f"  [yellow]AI: Timeout reached after {i-1} iterations[/yellow]")
@@ -169,9 +171,19 @@ class AiExplorer:
 
             # Auto-dismiss ANR dialogs
             if self._is_anr_dialog(hierarchy_xml):
-                self.console.print("  [yellow]AI: ANR dialog detected — dismissing[/yellow]")
+                anr_count += 1
+                self.console.print(f"  [yellow]AI: ANR dialog detected ({anr_count}) — dismissing[/yellow]")
                 self._shell("input keyevent KEYCODE_BACK")
-                time.sleep(1)
+                time.sleep(2)
+                if anr_count >= 6:
+                    self.console.print("  [red]AI: App keeps ANR-ing after relaunch — giving up[/red]")
+                    break
+                if anr_count >= 3:
+                    self.console.print("  [yellow]AI: 3 consecutive ANRs — force-stopping and relaunching[/yellow]")
+                    self._shell(f"am force-stop {self.package}")
+                    time.sleep(1)
+                    self._shell(f"am start -n $(cmd package resolve-activity --brief {self.package} | tail -1)")
+                    time.sleep(2)
                 continue
 
             # Track visited screens

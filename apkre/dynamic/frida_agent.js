@@ -526,73 +526,94 @@ function findByProloguePattern(mod, strAddr, funcName) {
 
 // ─── Java OkHttp hooks ──────────────────────────────────────────────────────
 
-Java.performNow(function () {
+// Defer Java hooks — Java.performNow fails in attach mode on Flutter apps
+setTimeout(function () {
   try {
-    var RealCall = Java.use("okhttp3.internal.connection.RealCall");
-
-    RealCall.execute.implementation = function () {
-      var resp = this.execute();
+    Java.perform(function () {
       try {
-        var req = this.request();
-        var url = req.url().toString();
-        var method = req.method();
-        var code = resp.code();
-        var msg = { type: "okhttp", method: method, url: url, status: code };
+        var RealCall = Java.use("okhttp3.internal.connection.RealCall");
 
-        // Safely read response body via peekBody (does NOT consume the stream)
+        RealCall.execute.implementation = function () {
+          var resp = this.execute();
+          try {
+            var req = this.request();
+            var url = req.url().toString();
+            var method = req.method();
+            var code = resp.code();
+            var msg = {
+              type: "okhttp",
+              method: method,
+              url: url,
+              status: code,
+            };
+
+            // Safely read response body via peekBody (does NOT consume the stream)
+            try {
+              var peeked = resp.peekBody(65536);
+              var bodyStr = peeked.string();
+              if (bodyStr && bodyStr.length > 0) {
+                msg.response_body = bodyStr.substring(0, 16384);
+              }
+            } catch (e) {}
+
+            // Read request body if present
+            try {
+              var reqBody = req.body();
+              if (reqBody !== null) {
+                var Buffer = Java.use("okio.Buffer");
+                var buf = Buffer.$new();
+                reqBody.writeTo(buf);
+                var reqStr = buf.readUtf8();
+                if (reqStr && reqStr.length > 0) {
+                  msg.request_body = reqStr.substring(0, 16384);
+                }
+              }
+            } catch (e) {}
+
+            send(msg);
+
+            // Extract auth header
+            try {
+              var authHeader = req.header("Authorization");
+              if (authHeader) {
+                send({ type: "token", value: authHeader });
+              }
+            } catch (e) {}
+          } catch (e) {}
+          return resp;
+        };
+
+        // Also hook enqueue for async calls
         try {
-          var peeked = resp.peekBody(65536);
-          var bodyStr = peeked.string();
-          if (bodyStr && bodyStr.length > 0) {
-            msg.response_body = bodyStr.substring(0, 16384);
-          }
+          RealCall.enqueue.implementation = function (callback) {
+            try {
+              var req = this.request();
+              var url = req.url().toString();
+              var method = req.method();
+              send({ type: "okhttp", method: method, url: url, status: 0 });
+            } catch (e) {}
+            this.enqueue(callback);
+          };
         } catch (e) {}
 
-        // Read request body if present
-        try {
-          var reqBody = req.body();
-          if (reqBody !== null) {
-            var Buffer = Java.use("okio.Buffer");
-            var buf = Buffer.$new();
-            reqBody.writeTo(buf);
-            var reqStr = buf.readUtf8();
-            if (reqStr && reqStr.length > 0) {
-              msg.request_body = reqStr.substring(0, 16384);
-            }
-          }
-        } catch (e) {}
-
-        send(msg);
-
-        // Extract auth header
-        try {
-          var authHeader = req.header("Authorization");
-          if (authHeader) {
-            send({ type: "token", value: authHeader });
-          }
-        } catch (e) {}
-      } catch (e) {}
-      return resp;
-    };
-
-    // Also hook enqueue for async calls
-    try {
-      RealCall.enqueue.implementation = function (callback) {
-        try {
-          var req = this.request();
-          var url = req.url().toString();
-          var method = req.method();
-          send({ type: "okhttp", method: method, url: url, status: 0 });
-        } catch (e) {}
-        this.enqueue(callback);
-      };
-    } catch (e) {}
-
-    send({ type: "hook_ok", label: "okhttp3" });
+        send({ type: "hook_ok", label: "okhttp3" });
+      } catch (e) {
+        // OkHttp not present — expected for Flutter apps
+        send({
+          type: "hook_info",
+          label: "okhttp3",
+          msg: "OkHttp not available: " + e,
+        });
+      }
+    });
   } catch (e) {
-    // OkHttp not present or Java not ready
+    send({
+      type: "hook_info",
+      label: "okhttp3",
+      msg: "Java not ready (attach mode): " + e,
+    });
   }
-});
+}, 2000);
 
 // ─── Heap token scan ────────────────────────────────────────────────────────
 

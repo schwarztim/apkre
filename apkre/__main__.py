@@ -185,6 +185,15 @@ def analyze(
 
                 from apkre.dynamic.ai_explorer import AiExplorer
 
+                # Wake + dismiss keyguard (no swipe to avoid triggering shortcuts)
+                console.print("  [yellow]→[/yellow] Waking device screen...")
+                subprocess.run(
+                    ["adb", "-s", device, "shell",
+                     "input keyevent KEYCODE_WAKEUP && input keyevent KEYCODE_MENU"],
+                    capture_output=True, timeout=10,
+                )
+                time.sleep(1)
+
                 # Launch app before Frida attach (needs a running process)
                 console.print(f"  [yellow]→[/yellow] Launching {pkg}...")
                 resolve_result = subprocess.run(
