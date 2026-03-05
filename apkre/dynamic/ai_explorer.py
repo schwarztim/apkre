@@ -52,26 +52,40 @@ _SYSTEM_PROMPT = """\
 You are an Android app explorer. Your goal is to systematically discover every API endpoint \
 by navigating every screen of the app. You receive a screenshot and compressed UI hierarchy.
 
-Strategy:
-- Prioritize: Settings, Profile, Account, Search, Lists, Tabs, Navigation drawers
-- Handle permission dialogs: tap "Allow" or "While using the app"
-- Handle login forms: type test credentials (test@example.com / TestPass123!)
-- Scroll feeds and lists to trigger pagination APIs
-- Visit every tab in bottom navigation bars
-- Open menus, expand sections, tap into detail screens
-- After exhausting a screen, go back and try the next unexplored element
-- If stuck on same screen, try swiping or pressing back
+Strategy (in priority order):
+1. FIRST: Dismiss any permission dialogs — tap "Allow", "While using the app", or "OK"
+2. FIRST: If there's a login/signup screen, enter test credentials:
+   - Email: test@example.com  Password: TestPass123!
+   - Or tap social login buttons (Google, Facebook, etc.)
+   - Try "Skip" or "Continue as guest" if login fails
+3. Visit EVERY tab in the bottom navigation bar — tap each one systematically left to right
+4. Open hamburger menus, navigation drawers (swipe right from left edge)
+5. Tap into: Settings, Profile, Account, Preferences, About, Help
+6. Open every list item to trigger detail API calls
+7. Scroll feeds/lists DOWN to trigger pagination APIs (at least 3 swipes per list)
+8. Tap Search and enter a test query like "test"
+9. Open notification/inbox screens
+10. After exhausting all tabs and screens, swipe between tab content to find hidden views
+11. Only say "done" when you've visited every tab AND scrolled every list AND opened settings
+
+Handle common patterns:
+- Cookie/GDPR banners: tap "Accept" or "Allow All"
+- Update dialogs: tap "Later" or "Skip"
+- Onboarding/tutorial: tap "Next" repeatedly then "Done"/"Skip"
+- Rating prompts: tap "Not Now" or "Later"
 
 Respond with ONLY a JSON object (no markdown, no explanation):
 {"action": "tap", "x": 360, "y": 640, "reason": "Tap Settings button"}
 {"action": "swipe", "direction": "up", "reason": "Scroll feed to load more"}
 {"action": "swipe", "direction": "left", "reason": "Swipe to next tab"}
+{"action": "swipe", "direction": "right", "reason": "Open navigation drawer"}
 {"action": "type", "text": "test@example.com", "reason": "Enter email in login form"}
 {"action": "back", "reason": "Return to previous screen"}
 {"action": "keyevent", "key": "KEYCODE_HOME", "reason": "Go home"}
-{"action": "done", "reason": "All screens explored, no new elements to interact with"}
+{"action": "done", "reason": "All tabs visited, all lists scrolled, all screens explored"}
 
-Track which screens you've visited based on the hierarchy. Prefer unexplored interactive elements.
+Track which screens you've visited based on the hierarchy. Prefer unexplored interactive elements. \
+Do NOT say done until you have explored at least 5 unique screens.
 """
 
 
@@ -157,6 +171,7 @@ class AiExplorer:
         last_ep_count = endpoint_counter()
 
         anr_count = 0
+        screenshot_fail_count = 0
 
         for i in range(1, self.max_iterations + 1):
             if time.time() > deadline:
@@ -166,8 +181,15 @@ class AiExplorer:
             # Capture state
             screenshot_b64, hierarchy_xml = self._capture_state()
             if not screenshot_b64:
-                self.console.print("  [red]AI: Failed to capture screenshot[/red]")
-                break
+                screenshot_fail_count += 1
+                if screenshot_fail_count >= 3:
+                    self.console.print("  [red]AI: Screenshot failed 3x — giving up[/red]")
+                    break
+                self.console.print("  [yellow]AI: Screenshot failed — relaunching app[/yellow]")
+                self._relaunch_app()
+                time.sleep(3)
+                continue
+            screenshot_fail_count = 0
 
             # Auto-dismiss ANR dialogs
             if self._is_anr_dialog(hierarchy_xml):
@@ -191,14 +213,22 @@ class AiExplorer:
             is_new_screen = screen_hash not in self._visited_hashes
             self._visited_hashes.add(screen_hash)
 
+            # Check if we left the app (e.g. back pressed too many times)
+            if self._is_outside_app(hierarchy_xml):
+                self.console.print("  [yellow]AI: Left the app — relaunching[/yellow]")
+                self._relaunch_app()
+                time.sleep(3)
+                self._same_screen_count = 0
+                continue
+
             # Stuck detection: same screen 3x → force back
             if screen_hash == self._last_hash:
                 self._same_screen_count += 1
                 if self._same_screen_count >= 5:
                     self.console.print("  [yellow]AI: Stuck — restarting main activity[/yellow]")
-                    self._shell(f"am start -n $(cmd package resolve-activity --brief {self.package} | tail -1)")
+                    self._relaunch_app()
                     self._same_screen_count = 0
-                    time.sleep(2)
+                    time.sleep(3)
                     continue
                 elif self._same_screen_count >= 3:
                     self.console.print("  [yellow]AI: Same screen 3x — forcing back[/yellow]")
@@ -234,8 +264,14 @@ class AiExplorer:
                 continue
 
             if action.get("action") == "done":
-                self.console.print(f"  [green]AI: Done — {action.get('reason', 'exploration complete')}[/green]")
-                break
+                if len(self._visited_hashes) < 5 and i < self.max_iterations // 2:
+                    self.console.print("  [yellow]AI: Ignoring early 'done' — only visited "
+                                       f"{len(self._visited_hashes)} screens[/yellow]")
+                    # Force it to try something instead
+                    action = {"action": "swipe", "direction": "up", "reason": "Force scroll to find more content"}
+                else:
+                    self.console.print(f"  [green]AI: Done — {action.get('reason', 'exploration complete')}[/green]")
+                    break
 
             # Execute
             reason = action.get("reason", "")
@@ -480,6 +516,33 @@ class AiExplorer:
         elif act == "keyevent":
             key = action.get("key", "KEYCODE_BACK")
             self._shell(f"input keyevent {key}")
+
+    def _relaunch_app(self) -> None:
+        """Force-stop and relaunch the app's main activity."""
+        self._shell(f"am force-stop {self.package}")
+        time.sleep(1)
+        activity = self._shell(
+            f"cmd package resolve-activity --brief {self.package} | tail -1"
+        )
+        if activity:
+            self._shell(f"am start -n {activity}")
+
+    def _is_outside_app(self, xml: str) -> bool:
+        """Detect if the current foreground is NOT our app (e.g. launcher, settings)."""
+        if not xml:
+            return False
+        # Check if the hierarchy contains our package name
+        if self.package in xml:
+            return False
+        # Common launcher/system indicators
+        launcher_hints = [
+            "com.android.launcher",
+            "com.google.android.apps.nexuslauncher",
+            "org.lineageos.trebuchet",
+            "com.android.settings",
+            "com.android.systemui",
+        ]
+        return any(hint in xml for hint in launcher_hints)
 
     def _adb(self, *args: str, timeout: int = 15) -> subprocess.CompletedProcess:
         return subprocess.run(

@@ -105,6 +105,28 @@ _NOISE_HOSTS = {
     "event.bblmw.com", "ip-api.com",
     "firebaselogging-pa.googleapis.com",
     "app-measurement.com", "analytics.google.com",
+    # Additional SDK/spec hosts
+    "www.opengl.org", "www.khronos.org", "registry.khronos.org",
+    "json-schema.org", "json-ld.org", "schema.org",
+    "www.w3.org", "www.rfc-editor.org",
+    "creativecommons.org", "www.apache.org",
+    "logging.apache.org", "commons.apache.org",
+    "square.github.io", "jakewharton.github.io",
+    "google.github.io", "bumptech.github.io",
+    "developer.mozilla.org",
+    "www.freedesktop.org",
+    "www.ietf.org",
+    # Certificate / OCSP / CRL infrastructure
+    "ocsp.digicert.com", "ocsp.pki.goog", "crl.pki.goog",
+    "ocsp.sectigo.com", "crl.sectigo.com",
+    "ocsp.verisign.com", "crl.verisign.com",
+    "pki.google.com", "crls.pki.goog",
+    # Android system
+    "connectivitycheck.gstatic.com",
+    "clients1.google.com", "clients3.google.com",
+    "www.gstatic.com", "fonts.gstatic.com",
+    "fonts.googleapis.com", "mtalk.google.com",
+    "android.googleapis.com",
 }
 
 _NOISE_PATH_PREFIXES = [
@@ -143,6 +165,14 @@ _NOISE_PATH_PREFIXES = [
     # Catch-all short noise
     "/a", "/s", "/>", "/%s",
     "/fd/", "/raw/", "/scaled_",
+    # OCSP/CRL/cert paths
+    "/ocsp", "/crl/", "/pki/", "/ca/", "/cert/",
+    # Schema/spec paths
+    "/draft/", "/draft-", "/json-schema/",
+    "/vocab/", "/schema/",
+    # Common non-API resource paths
+    "/static/", "/assets/", "/images/", "/fonts/",
+    "/css/", "/js/", "/media/",
 ]
 
 

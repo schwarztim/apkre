@@ -191,18 +191,36 @@ class FridaController:
         return session, pid
 
     def _attach(self, device, agent_js: str, on_message) -> tuple:
-        """Attach to a running app instance (no restart, preserves routing)."""
-        # Find the running PID
-        pid = self._find_pid()
-        if pid is None:
-            self.console.print("  [yellow]![/yellow] App not running, falling back to spawn mode")
-            return self._spawn(device, agent_js, on_message)
+        """Attach to a running app instance (no restart, preserves routing).
 
-        session = device.attach(pid)
-        script = session.create_script(agent_js)
-        script.on("message", on_message)
-        script.load()
-        return session, pid
+        Retries up to 3 times with PID refresh — handles the case where
+        frida-server restart causes the app to bounce and get a new PID.
+        """
+        for attempt in range(3):
+            pid = self._find_pid()
+            if pid is None:
+                if attempt < 2:
+                    self.console.print(f"  [yellow]![/yellow] App not running, waiting for restart (attempt {attempt+1}/3)...")
+                    time.sleep(3)
+                    continue
+                self.console.print("  [yellow]![/yellow] App not running after retries, falling back to spawn mode")
+                return self._spawn(device, agent_js, on_message)
+
+            try:
+                session = device.attach(pid)
+                script = session.create_script(agent_js)
+                script.on("message", on_message)
+                script.load()
+                return session, pid
+            except Exception as e:
+                if attempt < 2:
+                    self.console.print(f"  [yellow]![/yellow] Frida attach failed (pid={pid}): {e}")
+                    self.console.print(f"  [dim]Retrying in 3s (attempt {attempt+1}/3)...[/dim]")
+                    time.sleep(3)
+                else:
+                    self.console.print(f"  [yellow]![/yellow] Frida attach failed after 3 attempts: {e}")
+                    self.console.print("  [dim]Continuing without Frida hooks (logcat capture still active)[/dim]")
+                    raise
 
     def _find_pid(self) -> int | None:
         """Find PID of running package via adb."""
