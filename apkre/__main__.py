@@ -194,6 +194,14 @@ def analyze(
                 )
                 time.sleep(1)
 
+                # Ensure SELinux is enforcing (anti-tamper checks this)
+                setup._root_shell("setenforce 1")
+
+                # Stop frida-server during app launch (anti-tamper scans for it)
+                console.print("  [yellow]→[/yellow] Stopping frida-server for clean app launch...")
+                setup._root_shell("pkill -f frida-server || true")
+                time.sleep(1)
+
                 # Launch app before Frida attach (needs a running process)
                 console.print(f"  [yellow]→[/yellow] Launching {pkg}...")
                 resolve_result = subprocess.run(
@@ -206,7 +214,12 @@ def analyze(
                         ["adb", "-s", device, "shell", "am", "start", "-n", activity],
                         capture_output=True, timeout=10,
                     )
-                    time.sleep(3)
+                    time.sleep(5)  # Extra time for anti-tamper to complete
+
+                # Restart frida-server after app init (anti-tamper window passed)
+                console.print("  [yellow]→[/yellow] Restarting frida-server...")
+                setup._root_shell("/data/local/tmp/frida-server -D &")
+                time.sleep(2)
 
                 console.print("  [yellow]→[/yellow] Starting background logcat + Frida capture...")
                 logcat = LogcatTap(device, console)

@@ -253,13 +253,16 @@ class AiExplorer:
             remote_png = "/sdcard/apkre_screen.png"
             local_png = Path(tmp) / "screen.png"
 
-            self._shell(f"screencap -p {remote_png}")
-            self._adb("pull", remote_png, str(local_png))
-
-            # If screencap produced empty/missing file, retry with root (Magisk)
-            if not local_png.exists() or local_png.stat().st_size == 0:
-                self._shell(f"/debug_ramdisk/magisk su -c 'screencap -p {remote_png}'")
-                self._adb("pull", remote_png, str(local_png))
+            # Use exec-out (works with SELinux enforcing, unlike shell screencap)
+            try:
+                result = subprocess.run(
+                    ["adb", "-s", self.device, "exec-out", "screencap", "-p"],
+                    capture_output=True, timeout=10,
+                )
+                if result.stdout and len(result.stdout) > 100:
+                    local_png.write_bytes(result.stdout)
+            except subprocess.TimeoutExpired:
+                pass
 
             if not local_png.exists() or local_png.stat().st_size == 0:
                 return None, ""
