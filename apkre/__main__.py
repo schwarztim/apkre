@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import typer
@@ -183,6 +184,20 @@ def analyze(
                     raise typer.Exit(1)
 
                 from apkre.dynamic.ai_explorer import AiExplorer
+
+                # Launch app before Frida attach (needs a running process)
+                console.print(f"  [yellow]→[/yellow] Launching {pkg}...")
+                resolve_result = subprocess.run(
+                    ["adb", "-s", device, "shell", "cmd", "package", "resolve-activity", "--brief", pkg],
+                    capture_output=True, text=True, timeout=10,
+                )
+                activity = resolve_result.stdout.strip().splitlines()[-1] if resolve_result.stdout.strip() else None
+                if activity:
+                    subprocess.run(
+                        ["adb", "-s", device, "shell", "am", "start", "-n", activity],
+                        capture_output=True, timeout=10,
+                    )
+                    time.sleep(3)
 
                 console.print("  [yellow]→[/yellow] Starting background logcat + Frida capture...")
                 logcat = LogcatTap(device, console)

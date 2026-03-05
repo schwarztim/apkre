@@ -167,6 +167,13 @@ class AiExplorer:
                 self.console.print("  [red]AI: Failed to capture screenshot[/red]")
                 break
 
+            # Auto-dismiss ANR dialogs
+            if self._is_anr_dialog(hierarchy_xml):
+                self.console.print("  [yellow]AI: ANR dialog detected — dismissing[/yellow]")
+                self._shell("input keyevent KEYCODE_BACK")
+                time.sleep(1)
+                continue
+
             # Track visited screens
             screen_hash = self._hash_hierarchy(hierarchy_xml)
             is_new_screen = screen_hash not in self._visited_hashes
@@ -237,7 +244,12 @@ class AiExplorer:
             self._shell(f"screencap -p {remote_png}")
             self._adb("pull", remote_png, str(local_png))
 
-            if not local_png.exists():
+            # If screencap produced empty/missing file, retry with root (Magisk)
+            if not local_png.exists() or local_png.stat().st_size == 0:
+                self._shell(f"/debug_ramdisk/magisk su -c 'screencap -p {remote_png}'")
+                self._adb("pull", remote_png, str(local_png))
+
+            if not local_png.exists() or local_png.stat().st_size == 0:
                 return None, ""
 
             # Resize to 720px width to save tokens
@@ -274,6 +286,15 @@ class AiExplorer:
             img.save(path)
         except ImportError:
             pass  # Skip resize, use full image
+
+    def _is_anr_dialog(self, xml: str) -> bool:
+        """Detect ANR 'app isn't responding' dialog."""
+        if not xml:
+            return False
+        return ("isn't responding" in xml
+                or "isn\\'t responding" in xml
+                or "aerr_close" in xml
+                or "aerr_wait" in xml)
 
     def _hash_hierarchy(self, xml: str) -> str:
         """MD5 hash of hierarchy with bounds stripped for normalization."""
