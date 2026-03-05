@@ -537,7 +537,32 @@ Java.performNow(function () {
         var url = req.url().toString();
         var method = req.method();
         var code = resp.code();
-        send({ type: "okhttp", method: method, url: url, status: code });
+        var msg = { type: "okhttp", method: method, url: url, status: code };
+
+        // Safely read response body via peekBody (does NOT consume the stream)
+        try {
+          var peeked = resp.peekBody(65536);
+          var bodyStr = peeked.string();
+          if (bodyStr && bodyStr.length > 0) {
+            msg.response_body = bodyStr.substring(0, 16384);
+          }
+        } catch (e) {}
+
+        // Read request body if present
+        try {
+          var reqBody = req.body();
+          if (reqBody !== null) {
+            var Buffer = Java.use("okio.Buffer");
+            var buf = Buffer.$new();
+            reqBody.writeTo(buf);
+            var reqStr = buf.readUtf8();
+            if (reqStr && reqStr.length > 0) {
+              msg.request_body = reqStr.substring(0, 16384);
+            }
+          }
+        } catch (e) {}
+
+        send(msg);
 
         // Extract auth header
         try {

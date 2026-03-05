@@ -1,7 +1,9 @@
 """Device setup: clock sync, routing fix, proxy configuration."""
 from __future__ import annotations
 
+import atexit
 import re
+import signal
 import subprocess
 import time
 
@@ -15,6 +17,8 @@ class DeviceSetup:
         self.device = device
         self.console = console
         self._is_root: bool | None = None
+        self._saved_proxy: str | None = None
+        self._cleanup_registered = False
 
     def _adb(self, *args: str, timeout: int = 15) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -128,6 +132,67 @@ class DeviceSetup:
         """Remove global HTTP proxy setting."""
         self._shell("settings put global http_proxy :0")
         self.console.print("  [green]✓[/green] Proxy cleared")
+
+    def get_proxy(self) -> str:
+        """Get current global HTTP proxy setting. Returns ':0' or '' if none."""
+        return self._shell("settings get global http_proxy")
+
+    def save_state(self) -> None:
+        """Save current device state (proxy) for later restoration."""
+        self._saved_proxy = self.get_proxy()
+        self.console.print(f"  [dim]Saved device state (proxy={self._saved_proxy or 'none'})[/dim]")
+
+    def restore_state(self) -> None:
+        """Restore device state saved by save_state(). Always clears proxy if none was set."""
+        if self._saved_proxy and self._saved_proxy not in ("null", ":0", ""):
+            self._shell(f"settings put global http_proxy {self._saved_proxy}")
+            self.console.print(f"  [green]✓[/green] Proxy restored to {self._saved_proxy}")
+        else:
+            self._shell("settings put global http_proxy :0")
+            self.console.print("  [green]✓[/green] Proxy cleared (was not set before)")
+
+    def register_cleanup(self) -> None:
+        """Register cleanup handlers for atexit and SIGINT/SIGTERM.
+
+        Ensures proxy is restored even if the process is killed or Ctrl+C'd.
+        Safe to call multiple times — only registers once.
+        """
+        if self._cleanup_registered:
+            return
+        self._cleanup_registered = True
+
+        def _cleanup(*_args):
+            try:
+                self.restore_state()
+            except Exception:
+                pass
+
+        atexit.register(_cleanup)
+
+        # Chain SIGINT/SIGTERM handlers so Ctrl+C triggers cleanup
+        prev_sigint = signal.getsignal(signal.SIGINT)
+        prev_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def _signal_handler(signum, frame):
+            _cleanup()
+            prev = prev_sigint if signum == signal.SIGINT else prev_sigterm
+            if callable(prev):
+                prev(signum, frame)
+            elif prev == signal.SIG_DFL:
+                signal.signal(signum, signal.SIG_DFL)
+                signal.raise_signal(signum)
+
+        signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGTERM, _signal_handler)
+
+    def __enter__(self) -> "DeviceSetup":
+        self.save_state()
+        self.register_cleanup()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.restore_state()
+        return None
 
     def install_mitmproxy_ca(self, cert_path: str) -> None:
         """Install mitmproxy CA cert as system-trusted CA (requires root)."""

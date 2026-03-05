@@ -22,7 +22,7 @@ from apkre.output.postman_builder import PostmanBuilder
 from apkre.output.curl_builder import CurlBuilder
 from apkre.device.prereq_check import PrereqChecker
 from apkre.device.setup import DeviceSetup
-from apkre.dynamic.ai_explorer import ANTHROPIC_AVAILABLE
+from apkre.dynamic.ai_explorer import AI_AVAILABLE
 from apkre.session import Session
 
 app = typer.Typer(
@@ -159,102 +159,109 @@ def analyze(
         console.rule("[bold]Phase 2 — Dynamic Capture[/bold]")
 
         setup = DeviceSetup(device, console)
-        setup.sync_clock()
-        setup.fix_routing()
+        setup.save_state()
+        setup.register_cleanup()
 
-        if not setup.verify_connectivity():
-            console.print("  [red]✗[/red] No internet connectivity — try toggling WiFi on device")
-            console.print("  [dim]Continuing with capture anyway (logcat may still work)...[/dim]")
+        try:
+            setup.sync_clock()
+            setup.fix_routing()
 
-        pkg = session.package_name
-        if pkg is None:
-            pkg = ApkUnpacker.extract_package_name(apk_path, device=device)
-            session.package_name = pkg
-        console.print(f"  [green]✓[/green] Package: {pkg}")
+            if not setup.verify_connectivity():
+                console.print("  [red]✗[/red] No internet connectivity — try toggling WiFi on device")
+                console.print("  [dim]Continuing with capture anyway (logcat may still work)...[/dim]")
 
-        if ai:
-            # AI-driven exploration: background capture + Claude navigation
-            if not ANTHROPIC_AVAILABLE:
-                console.print("[red]anthropic SDK not installed. Run: pip install 'apkre[ai]'[/red]")
-                raise typer.Exit(1)
+            pkg = session.package_name
+            if pkg is None:
+                pkg = ApkUnpacker.extract_package_name(apk_path, device=device)
+                session.package_name = pkg
+            console.print(f"  [green]✓[/green] Package: {pkg}")
 
-            from apkre.dynamic.ai_explorer import AiExplorer
+            if ai:
+                # AI-driven exploration: background capture + Claude navigation
+                if not AI_AVAILABLE:
+                    console.print("[red]No AI SDK installed. Run: pip install openai  or  pip install 'apkre[ai]'[/red]")
+                    raise typer.Exit(1)
 
-            console.print("  [yellow]→[/yellow] Starting background logcat + Frida capture...")
-            logcat = LogcatTap(device, console)
-            logcat.start()
+                from apkre.dynamic.ai_explorer import AiExplorer
 
-            frida_ctl = FridaController(device, pkg, console)
-            console.print("  [yellow]→[/yellow] Frida SSL hooks (attach mode)...")
-            try:
-                frida_ctl.start_background(mode="attach")
-            except Exception as e:
-                console.print(f"  [red]✗[/red] Frida background start failed: {e}")
-                console.print("  [dim]Continuing with logcat only...[/dim]")
+                console.print("  [yellow]→[/yellow] Starting background logcat + Frida capture...")
+                logcat = LogcatTap(device, console)
+                logcat.start()
 
-            def _endpoint_count():
-                return len(logcat._lines) + len(frida_ctl._endpoints)
+                frida_ctl = FridaController(device, pkg, console)
+                console.print("  [yellow]→[/yellow] Frida SSL hooks (attach mode)...")
+                try:
+                    frida_ctl.start_background(mode="attach")
+                except Exception as e:
+                    console.print(f"  [red]✗[/red] Frida background start failed: {e}")
+                    console.print("  [dim]Continuing with logcat only...[/dim]")
 
-            console.print("  [yellow]→[/yellow] Starting AI exploration...")
-            explorer = AiExplorer(
-                device, pkg, console,
-                max_iterations=50,
-                stale_threshold=8,
-                timeout=timeout,
-            )
-            explorer.explore(endpoint_counter=_endpoint_count)
+                def _endpoint_count():
+                    return len(logcat._lines) + len(frida_ctl._endpoints)
 
-            # Collect results
-            logcat_endpoints = logcat.stop()
-            console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
-            endpoints.extend(logcat_endpoints)
+                console.print("  [yellow]→[/yellow] Starting AI exploration...")
+                explorer = AiExplorer(
+                    device, pkg, console,
+                    max_iterations=50,
+                    stale_threshold=8,
+                    timeout=timeout,
+                )
+                explorer.explore(endpoint_counter=_endpoint_count)
 
-            frida_endpoints = frida_ctl.stop_background()
-            console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
-            endpoints.extend(frida_endpoints)
-            if frida_ctl.tokens:
-                session.tokens.extend(frida_ctl.tokens)
+                # Collect results
+                logcat_endpoints = logcat.stop()
+                console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
+                endpoints.extend(logcat_endpoints)
 
-        else:
-            # Standard capture: sequential logcat then frida
-            # Logcat tap (fastest for Flutter/Dio apps)
-            console.print("  [yellow]→[/yellow] Starting logcat tap...")
-            logcat = LogcatTap(device, console)
-            logcat_endpoints = logcat.capture(
-                timeout=min(timeout, 120) if interactive else min(timeout, 60),
-                interactive=interactive,
-            )
-            console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
-            endpoints.extend(logcat_endpoints)
-
-            # Frida SSL hook (universal)
-            frida_ctl = FridaController(device, pkg, console)
-            frida_mode = "attach" if interactive else "spawn"
-            console.print(f"  [yellow]→[/yellow] Frida SSL hooks ({frida_mode} mode)...")
-            try:
-                frida_endpoints = frida_ctl.capture(timeout=timeout, mode=frida_mode)
+                frida_endpoints = frida_ctl.stop_background()
                 console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
                 endpoints.extend(frida_endpoints)
                 if frida_ctl.tokens:
                     session.tokens.extend(frida_ctl.tokens)
-            except Exception as e:
-                console.print(f"  [red]✗[/red] Frida failed: {e}")
-                console.print("  [dim]Continuing with logcat + static results...[/dim]")
 
-        # Token extraction
-        console.print("  [yellow]→[/yellow] Extracting auth tokens...")
-        extractor = TokenExtractor(device, pkg, console)
-        try:
-            tokens = extractor.extract()
-            session.tokens.extend(tokens)
-            if tokens:
-                console.print(f"  [green]✓[/green] Captured {len(tokens)} token(s)")
             else:
-                console.print("  [yellow]![/yellow] No tokens captured via heap/prefs")
-        except Exception as e:
-            console.print(f"  [red]✗[/red] Token extraction failed: {e}")
+                # Standard capture: sequential logcat then frida
+                # Logcat tap (fastest for Flutter/Dio apps)
+                console.print("  [yellow]→[/yellow] Starting logcat tap...")
+                logcat = LogcatTap(device, console)
+                logcat_endpoints = logcat.capture(
+                    timeout=min(timeout, 120) if interactive else min(timeout, 60),
+                    interactive=interactive,
+                )
+                console.print(f"  [green]✓[/green] Logcat: {len(logcat_endpoints)} endpoints")
+                endpoints.extend(logcat_endpoints)
 
-        session.save_endpoints(endpoints, source="dynamic")
+                # Frida SSL hook (universal)
+                frida_ctl = FridaController(device, pkg, console)
+                frida_mode = "attach" if interactive else "spawn"
+                console.print(f"  [yellow]→[/yellow] Frida SSL hooks ({frida_mode} mode)...")
+                try:
+                    frida_endpoints = frida_ctl.capture(timeout=timeout, mode=frida_mode)
+                    console.print(f"  [green]✓[/green] Frida: {len(frida_endpoints)} requests captured")
+                    endpoints.extend(frida_endpoints)
+                    if frida_ctl.tokens:
+                        session.tokens.extend(frida_ctl.tokens)
+                except Exception as e:
+                    console.print(f"  [red]✗[/red] Frida failed: {e}")
+                    console.print("  [dim]Continuing with logcat + static results...[/dim]")
+
+            # Token extraction
+            console.print("  [yellow]→[/yellow] Extracting auth tokens...")
+            extractor = TokenExtractor(device, pkg, console)
+            try:
+                tokens = extractor.extract()
+                session.tokens.extend(tokens)
+                if tokens:
+                    console.print(f"  [green]✓[/green] Captured {len(tokens)} token(s)")
+                else:
+                    console.print("  [yellow]![/yellow] No tokens captured via heap/prefs")
+            except Exception as e:
+                console.print(f"  [red]✗[/red] Token extraction failed: {e}")
+
+            session.save_endpoints(endpoints, source="dynamic")
+        finally:
+            console.rule("[dim]Cleanup[/dim]")
+            setup.restore_state()
     elif not static_only and not device:
         console.print("[yellow]Warning: no device detected, skipping dynamic capture[/yellow]")
 
@@ -317,6 +324,20 @@ def device_setup(
     setup.fix_routing()
     setup.set_proxy(proxy_host, proxy_port)
     console.print("[green]Device setup complete.[/green]")
+    console.print(f"[yellow]Remember:[/yellow] Run [bold]apkre device-cleanup --device {device}[/bold] when done to restore proxy.")
+
+
+@app.command()
+def device_cleanup(
+    device: str = typer.Option(..., "--device", help="ADB device serial"),
+) -> None:
+    """Restore device to clean state: clear proxy, verify connectivity."""
+    setup = DeviceSetup(device, console)
+    setup.clear_proxy()
+    if setup.verify_connectivity():
+        console.print("[green]Device restored — connectivity verified.[/green]")
+    else:
+        console.print("[yellow]Proxy cleared but connectivity check failed — try toggling WiFi.[/yellow]")
 
 
 @app.command()

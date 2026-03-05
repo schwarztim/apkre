@@ -23,8 +23,15 @@ _HTTP_REQUEST_RE = re.compile(
     r'^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(https?://[^\s]+|/[^\s]*)\s+HTTP',
     re.MULTILINE,
 )
+_HTTP_RESPONSE_RE = re.compile(
+    r'^HTTP/[\d.]+\s+(\d{3})\s',
+    re.MULTILINE,
+)
 _AUTH_HEADER_RE = re.compile(
     r'^Authorization:\s*(.+)$', re.MULTILINE | re.IGNORECASE,
+)
+_CONTENT_TYPE_RE = re.compile(
+    r'^Content-Type:\s*(\S+)', re.MULTILINE | re.IGNORECASE,
 )
 _HOST_HEADER_RE = re.compile(
     r'^Host:\s*(\S+)', re.MULTILINE | re.IGNORECASE,
@@ -42,6 +49,7 @@ class FridaController:
         self._endpoints: list[dict] = []
         self._tokens: list[str] = []
         self._seen_keys: set[str] = set()
+        self._pending_requests: dict[str, dict] = {}  # key → endpoint for response matching
 
     def start_background(self, mode: str = "attach") -> None:
         """Start Frida capture in a background daemon thread."""
@@ -69,19 +77,7 @@ class FridaController:
                     if mtype in ("ssl_write", "ssl_read"):
                         self._parse_http_chunk(payload.get("data", ""), mtype)
                     elif mtype == "okhttp":
-                        url = payload.get("url", "")
-                        parsed = _parse_url(url)
-                        if parsed:
-                            key = f"{payload.get('method','GET')}:{parsed['host']}:{parsed['path']}"
-                            if key not in self._seen_keys:
-                                self._seen_keys.add(key)
-                                self._endpoints.append({
-                                    **parsed,
-                                    "method": payload.get("method", "GET").upper(),
-                                    "source": "frida-okhttp",
-                                    "auth": False,
-                                    "status": payload.get("status"),
-                                })
+                        self._handle_okhttp(payload)
                     elif mtype == "token":
                         val = payload.get("value", "")
                         if val and val not in self._tokens:
@@ -156,19 +152,7 @@ class FridaController:
                 self._parse_http_chunk(chunk, mtype)
 
             elif mtype == "okhttp":
-                url = payload.get("url", "")
-                parsed = _parse_url(url)
-                if parsed:
-                    key = f"{payload.get('method','GET')}:{parsed['host']}:{parsed['path']}"
-                    if key not in self._seen_keys:
-                        self._seen_keys.add(key)
-                        self._endpoints.append({
-                            **parsed,
-                            "method": payload.get("method", "GET").upper(),
-                            "source": "frida-okhttp",
-                            "auth": False,
-                            "status": payload.get("status"),
-                        })
+                self._handle_okhttp(payload)
 
             elif mtype == "token":
                 val = payload.get("value", "")
@@ -234,9 +218,58 @@ class FridaController:
             pass
         return None
 
+    def _handle_okhttp(self, payload: dict) -> None:
+        """Process an OkHttp message (request + optional response/request bodies)."""
+        url = payload.get("url", "")
+        parsed = _parse_url(url)
+        if not parsed:
+            return
+
+        method = payload.get("method", "GET").upper()
+        key = f"{method}:{parsed['host']}:{parsed['path']}"
+        if key in self._seen_keys:
+            # Still try to attach response body to existing endpoint
+            if payload.get("response_body"):
+                for ep in reversed(self._endpoints):
+                    if f"{ep['method']}:{ep['host']}:{ep['path']}" == key:
+                        if not ep.get("response_body"):
+                            self._try_attach_body(ep, "response_body", payload["response_body"])
+                        break
+            return
+
+        self._seen_keys.add(key)
+        ep = {
+            **parsed,
+            "method": method,
+            "source": "frida-okhttp",
+            "auth": False,
+            "status": payload.get("status"),
+        }
+
+        # Attach response body
+        if payload.get("response_body"):
+            self._try_attach_body(ep, "response_body", payload["response_body"])
+
+        # Attach request body
+        if payload.get("request_body"):
+            self._try_attach_body(ep, "request_body", payload["request_body"])
+
+        self._endpoints.append(ep)
+
+    def _try_attach_body(self, ep: dict, field: str, raw: str) -> None:
+        """Try to parse a body string as JSON; store raw string as fallback."""
+        try:
+            ep[field] = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
     def _parse_http_chunk(self, chunk: str, direction: str) -> None:
         """Parse raw HTTP text captured from SSL buffer."""
-        # Extract Host header for path-only requests
+        if direction == "ssl_read":
+            self._parse_http_response(chunk)
+            return
+
+        # --- Request parsing (ssl_write) ---
         host_m = _HOST_HEADER_RE.search(chunk)
         default_host = host_m.group(1) if host_m else ""
 
@@ -282,6 +315,49 @@ class FridaController:
                     pass
 
             self._endpoints.append(ep)
+            # Track for response matching
+            self._pending_requests[f"{parsed['host']}:{parsed['path']}"] = ep
+
+    def _parse_http_response(self, chunk: str) -> None:
+        """Parse HTTP response from ssl_read buffer — extract status + body."""
+        resp_m = _HTTP_RESPONSE_RE.search(chunk)
+        if not resp_m:
+            return
+
+        status = int(resp_m.group(1))
+
+        # Extract response body (after headers blank line)
+        body_m = re.search(r'\r?\n\r?\n(.+)', chunk, re.DOTALL)
+        body = None
+        if body_m:
+            body_text = body_m.group(1).strip()
+            # Only parse JSON responses (skip HTML, images, etc.)
+            ct_m = _CONTENT_TYPE_RE.search(chunk)
+            is_json = ct_m and "json" in ct_m.group(1).lower() if ct_m else False
+            if is_json or body_text.startswith(("{", "[")):
+                try:
+                    body = json.loads(body_text)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # Match response to most recent pending request
+        # HTTP/1.1 responses come on the same connection, so match by recency
+        if self._pending_requests:
+            # Pop the most recently added pending request
+            last_key = list(self._pending_requests.keys())[-1]
+            ep = self._pending_requests.pop(last_key)
+            if not ep.get("status"):
+                ep["status"] = status
+            if body and not ep.get("response_body"):
+                ep["response_body"] = body
+        elif self._endpoints:
+            # Fallback: attach to last endpoint without a response
+            for ep in reversed(self._endpoints):
+                if not ep.get("status") and ep.get("source") == "frida-ssl":
+                    ep["status"] = status
+                    if body and not ep.get("response_body"):
+                        ep["response_body"] = body
+                    break
 
     @property
     def tokens(self) -> list[str]:

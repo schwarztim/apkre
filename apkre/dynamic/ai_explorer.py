@@ -1,9 +1,17 @@
-"""AI-driven dynamic app exploration via Claude vision + adb."""
+"""AI-driven dynamic app exploration via vision LLM + adb.
+
+Supports Azure OpenAI (GPT-4o) and Anthropic (Claude Sonnet) as vision backends.
+Priority: Azure OpenAI → Anthropic → error.
+
+Azure credentials are read from macOS Keychain (service: azure-openai) or env vars
+(AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT). Anthropic uses ANTHROPIC_API_KEY.
+"""
 from __future__ import annotations
 
 import base64
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -12,12 +20,33 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 try:
+    from openai import AzureOpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
+try:
     import anthropic
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
+AI_AVAILABLE = OPENAI_AVAILABLE or ANTHROPIC_AVAILABLE
+
 from rich.console import Console
+
+
+def _keychain_get(service: str, account: str) -> str | None:
+    """Read a value from macOS Keychain. Returns None on failure."""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
+            capture_output=True, text=True, timeout=5,
+        )
+        val = result.stdout.strip()
+        return val if val and result.returncode == 0 else None
+    except Exception:
+        return None
 
 _SYSTEM_PROMPT = """\
 You are an Android app explorer. Your goal is to systematically discover every API endpoint \
@@ -47,7 +76,7 @@ Track which screens you've visited based on the hierarchy. Prefer unexplored int
 
 
 class AiExplorer:
-    """Use Claude vision to autonomously navigate an Android app."""
+    """Use vision LLM to autonomously navigate an Android app."""
 
     def __init__(
         self,
@@ -67,6 +96,48 @@ class AiExplorer:
         self._visited_hashes: set[str] = set()
         self._same_screen_count = 0
         self._last_hash: str | None = None
+        self._backend: str | None = None
+        self._client = None
+
+    def _init_client(self) -> bool:
+        """Initialize the best available vision LLM backend."""
+        # Try Azure OpenAI first
+        if OPENAI_AVAILABLE:
+            api_key = os.environ.get("AZURE_OPENAI_API_KEY") or _keychain_get("azure-openai", "api-key")
+            endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT") or _keychain_get("azure-openai", "api-base")
+            if api_key and endpoint:
+                client = AzureOpenAI(
+                    api_key=api_key,
+                    azure_endpoint=endpoint.rstrip("/"),
+                    api_version="2024-10-21",
+                )
+                # Verify connectivity with a tiny test call
+                try:
+                    client.chat.completions.create(
+                        model="qrg-gpt4o-experimental",
+                        max_tokens=1,
+                        messages=[{"role": "user", "content": "hi"}],
+                    )
+                    self._client = client
+                    self._backend = "azure-openai"
+                    self.console.print("  [green]✓[/green] AI backend: Azure OpenAI (GPT-4o)")
+                    return True
+                except Exception as e:
+                    self.console.print(f"  [yellow]![/yellow] Azure OpenAI failed: {e}")
+                    self.console.print("  [dim]Falling back to Anthropic...[/dim]")
+
+        # Fall back to Anthropic
+        if ANTHROPIC_AVAILABLE:
+            api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if api_key:
+                self._client = anthropic.Anthropic()
+                self._backend = "anthropic"
+                self.console.print(f"  [green]✓[/green] AI backend: Anthropic (Claude Sonnet)")
+                return True
+
+        self.console.print("[red]No AI backend available. Set AZURE_OPENAI_API_KEY or ANTHROPIC_API_KEY.[/red]")
+        self.console.print("[dim]Or: pip install openai && store key in Keychain (service: azure-openai)[/dim]")
+        return False
 
     def explore(self, endpoint_counter: callable) -> None:
         """Main exploration loop.
@@ -74,11 +145,13 @@ class AiExplorer:
         Args:
             endpoint_counter: callable that returns current endpoint count
         """
-        if not ANTHROPIC_AVAILABLE:
-            self.console.print("[red]anthropic SDK not installed. Run: pip install anthropic[/red]")
+        if not AI_AVAILABLE:
+            self.console.print("[red]No AI SDK installed. Run: pip install openai  or  pip install anthropic[/red]")
             return
 
-        client = anthropic.Anthropic()
+        if not self._init_client():
+            return
+
         deadline = time.time() + self.timeout
         stale_count = 0
         last_ep_count = endpoint_counter()
@@ -131,10 +204,10 @@ class AiExplorer:
                 )
                 break
 
-            # Ask Claude for next action
+            # Ask LLM for next action
             compressed_hierarchy = self._compress_hierarchy(hierarchy_xml)
             action = self._decide_action(
-                client, screenshot_b64, compressed_hierarchy,
+                screenshot_b64, compressed_hierarchy,
                 i, len(self._visited_hashes), current_ep_count,
             )
             if not action:
@@ -263,50 +336,81 @@ class AiExplorer:
 
     def _decide_action(
         self,
-        client: anthropic.Anthropic,
         screenshot_b64: str,
         hierarchy: str,
         iteration: int,
         visited_count: int,
         endpoint_count: int,
     ) -> dict | None:
-        """Ask Claude to decide the next action."""
-        user_content = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": screenshot_b64,
-                },
-            },
-            {
-                "type": "text",
-                "text": (
-                    f"Iteration {iteration}. "
-                    f"Visited {visited_count} unique screens. "
-                    f"Discovered {endpoint_count} API endpoints so far.\n\n"
-                    f"UI Hierarchy:\n```xml\n{hierarchy}\n```\n\n"
-                    f"What action should I take next? Respond with JSON only."
-                ),
-            },
-        ]
+        """Ask vision LLM to decide the next action."""
+        user_text = (
+            f"Iteration {iteration}. "
+            f"Visited {visited_count} unique screens. "
+            f"Discovered {endpoint_count} API endpoints so far.\n\n"
+            f"UI Hierarchy:\n```xml\n{hierarchy}\n```\n\n"
+            f"What action should I take next? Respond with JSON only."
+        )
 
         try:
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=256,
-                system=_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_content}],
-            )
-            text = response.content[0].text.strip()
+            if self._backend == "azure-openai":
+                text = self._call_azure(screenshot_b64, user_text)
+            else:
+                text = self._call_anthropic(screenshot_b64, user_text)
+
             # Strip markdown code fences if present
             text = re.sub(r'^```(?:json)?\s*', '', text)
             text = re.sub(r'\s*```$', '', text)
             return json.loads(text)
         except (json.JSONDecodeError, Exception) as e:
-            self.console.print(f"  [red]AI: Claude response error: {e}[/red]")
+            self.console.print(f"  [red]AI: LLM response error: {e}[/red]")
             return None
+
+    def _call_azure(self, screenshot_b64: str, user_text: str) -> str:
+        """Call Azure OpenAI GPT-4o with vision."""
+        response = self._client.chat.completions.create(
+            model="qrg-gpt4o-experimental",
+            max_tokens=256,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{screenshot_b64}",
+                                "detail": "low",
+                            },
+                        },
+                        {"type": "text", "text": user_text},
+                    ],
+                },
+            ],
+        )
+        return response.choices[0].message.content.strip()
+
+    def _call_anthropic(self, screenshot_b64: str, user_text: str) -> str:
+        """Call Anthropic Claude Sonnet with vision."""
+        response = self._client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=256,
+            system=_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": screenshot_b64,
+                        },
+                    },
+                    {"type": "text", "text": user_text},
+                ],
+            }],
+        )
+        return response.content[0].text.strip()
 
     def _execute_action(self, action: dict) -> None:
         """Execute an adb action."""
