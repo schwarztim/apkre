@@ -48,6 +48,7 @@ class OpenApiBuilder:
                         "type": "http",
                         "scheme": "bearer",
                         "bearerFormat": "JWT",
+                        **({"x-sample-token": self.session.tokens[0]} if self.session.tokens else {}),
                     }
                 }
             },

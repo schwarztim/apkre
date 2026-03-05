@@ -31,7 +31,7 @@ class PostmanBuilder:
                 "bearer": [{"key": "token", "value": "{{bearer_token}}", "type": "string"}],
             },
             "variable": [
-                {"key": "bearer_token", "value": "", "description": "Bearer token captured by apkre"},
+                {"key": "bearer_token", "value": self.session.tokens[0] if self.session.tokens else "", "description": "Bearer token captured by apkre"},
             ],
             "item": [],
         }

@@ -49,43 +49,51 @@ def _keychain_get(service: str, account: str) -> str | None:
         return None
 
 _SYSTEM_PROMPT = """\
-You are an Android app explorer. Your goal is to systematically discover every API endpoint \
-by navigating every screen of the app. You receive a screenshot and compressed UI hierarchy.
+You are an API reverse engineer. You are navigating an Android app to discover and catalog \
+every backend API endpoint. You see a screenshot, UI hierarchy, and a LIVE LIST of captured \
+API endpoints that updates as you trigger network calls.
 
-Strategy (in priority order):
-1. FIRST: Dismiss any permission dialogs — tap "Allow", "While using the app", or "OK"
-2. FIRST: If there's a login/signup screen, enter test credentials:
-   - Email: test@example.com  Password: TestPass123!
-   - Or tap social login buttons (Google, Facebook, etc.)
-   - Try "Skip" or "Continue as guest" if login fails
-3. Visit EVERY tab in the bottom navigation bar — tap each one systematically left to right
-4. Open hamburger menus, navigation drawers (swipe right from left edge)
-5. Tap into: Settings, Profile, Account, Preferences, About, Help
-6. Open every list item to trigger detail API calls
-7. Scroll feeds/lists DOWN to trigger pagination APIs (at least 3 swipes per list)
-8. Tap Search and enter a test query like "test"
-9. Open notification/inbox screens
-10. After exhausting all tabs and screens, swipe between tab content to find hidden views
-11. Only say "done" when you've visited every tab AND scrolled every list AND opened settings
+YOUR GOAL: Maximize the number of unique API endpoints captured. Every tap, scroll, and \
+form submission should be chosen to trigger a NEW backend call.
 
-Handle common patterns:
-- Cookie/GDPR banners: tap "Accept" or "Allow All"
-- Update dialogs: tap "Later" or "Skip"
-- Onboarding/tutorial: tap "Next" repeatedly then "Done"/"Skip"
-- Rating prompts: tap "Not Now" or "Later"
+HIGH-VALUE ACTIONS (do these first):
+1. Login/auth flows → triggers auth endpoints (token, refresh, user profile)
+2. Pull-to-refresh on lists → triggers list/feed endpoints
+3. Tap into detail views → triggers GET /resource/{id} endpoints
+4. Submit forms (search, create, edit) → triggers POST/PUT endpoints
+5. Delete/remove actions → triggers DELETE endpoints
+6. Settings/profile → triggers config, preferences, feature-flag endpoints
+7. Pagination (scroll to bottom of lists) → triggers ?page=2 / ?offset= endpoints
+8. Toggle switches/checkboxes → triggers PATCH/PUT settings endpoints
+9. Push notification/inbox → triggers notification endpoints
+10. Refresh/retry after errors → may reveal error-handling endpoints
 
-Respond with ONLY a JSON object (no markdown, no explanation):
-{"action": "tap", "x": 360, "y": 640, "reason": "Tap Settings button"}
-{"action": "swipe", "direction": "up", "reason": "Scroll feed to load more"}
-{"action": "swipe", "direction": "left", "reason": "Swipe to next tab"}
-{"action": "swipe", "direction": "right", "reason": "Open navigation drawer"}
-{"action": "type", "text": "test@example.com", "reason": "Enter email in login form"}
-{"action": "back", "reason": "Return to previous screen"}
-{"action": "keyevent", "key": "KEYCODE_HOME", "reason": "Go home"}
-{"action": "done", "reason": "All tabs visited, all lists scrolled, all screens explored"}
+LOW-VALUE ACTIONS (avoid unless nothing else works):
+- Scrolling through static content with no list items
+- Re-visiting screens you've already been to
+- Tapping decorative/non-interactive elements
 
-Track which screens you've visited based on the hierarchy. Prefer unexplored interactive elements. \
-Do NOT say done until you have explored at least 5 unique screens.
+HANDLE THESE AUTOMATICALLY:
+- Permission dialogs: "Allow" / "While using the app"
+- Cookie/GDPR: "Accept"
+- Update prompts: "Later" / "Skip"
+- Login: use test@example.com / TestPass123! or try "Skip"/"Guest"
+
+UNCAPTURED TARGETS are paths found in the APK binary via static analysis. Prioritize \
+actions that trigger these endpoints — they represent known API surface not yet exercised.
+
+ANALYZE the captured endpoints list to identify gaps:
+- If you see GET /users but no POST /users → try to create something
+- If you see /v1/devices/list but no /v1/devices/{id} → tap into a device detail
+- If you see auth endpoints but no profile → navigate to profile/settings
+- If you see only GET endpoints → look for forms, create buttons, edit icons
+
+Respond with ONLY a JSON object:
+{"action": "tap", "x": 360, "y": 640, "reason": "Open device detail to trigger GET /devices/{id}"}
+{"action": "swipe", "direction": "up", "reason": "Scroll printer list to trigger pagination"}
+{"action": "type", "text": "query", "reason": "Search to trigger search API"}
+{"action": "back", "reason": "Return to try a different section"}
+{"action": "done", "reason": "Exhausted all discoverable API surfaces"}
 """
 
 
@@ -100,6 +108,7 @@ class AiExplorer:
         max_iterations: int = 50,
         stale_threshold: int = 8,
         timeout: int = 300,
+        static_endpoints: list[dict] | None = None,
     ) -> None:
         self.device = device
         self.package = package
@@ -107,11 +116,13 @@ class AiExplorer:
         self.max_iterations = max_iterations
         self.stale_threshold = stale_threshold
         self.timeout = timeout
+        self.static_endpoints = static_endpoints or []
         self._visited_hashes: set[str] = set()
         self._same_screen_count = 0
         self._last_hash: str | None = None
         self._backend: str | None = None
         self._client = None
+        self._tried_last_resort = False
 
     def _init_client(self) -> bool:
         """Initialize the best available vision LLM backend."""
@@ -153,11 +164,12 @@ class AiExplorer:
         self.console.print("[dim]Or: pip install openai && store key in Keychain (service: azure-openai)[/dim]")
         return False
 
-    def explore(self, endpoint_counter: callable) -> None:
+    def explore(self, endpoint_feed: callable) -> None:
         """Main exploration loop.
 
         Args:
-            endpoint_counter: callable that returns current endpoint count
+            endpoint_feed: callable returning list[dict] of captured endpoints so far
+                           (each dict has method, host, path, status, source keys)
         """
         if not AI_AVAILABLE:
             self.console.print("[red]No AI SDK installed. Run: pip install openai  or  pip install anthropic[/red]")
@@ -166,9 +178,11 @@ class AiExplorer:
         if not self._init_client():
             return
 
-        deadline = time.time() + self.timeout
+        self._start_time = time.time()
+        deadline = self._start_time + self.timeout
         stale_count = 0
-        last_ep_count = endpoint_counter()
+        last_ep_count = 0
+        self._conversation: list[dict] = []  # rolling conversation history
 
         anr_count = 0
         screenshot_fail_count = 0
@@ -210,10 +224,9 @@ class AiExplorer:
 
             # Track visited screens
             screen_hash = self._hash_hierarchy(hierarchy_xml)
-            is_new_screen = screen_hash not in self._visited_hashes
             self._visited_hashes.add(screen_hash)
 
-            # Check if we left the app (e.g. back pressed too many times)
+            # Check if we left the app
             if self._is_outside_app(hierarchy_xml):
                 self.console.print("  [yellow]AI: Left the app — relaunching[/yellow]")
                 self._relaunch_app()
@@ -221,7 +234,7 @@ class AiExplorer:
                 self._same_screen_count = 0
                 continue
 
-            # Stuck detection: same screen 3x → force back
+            # Stuck detection
             if screen_hash == self._last_hash:
                 self._same_screen_count += 1
                 if self._same_screen_count >= 5:
@@ -239,8 +252,11 @@ class AiExplorer:
                 self._same_screen_count = 0
             self._last_hash = screen_hash
 
+            # Get live captured endpoints
+            captured = endpoint_feed()
+            current_ep_count = len(captured)
+
             # Stale endpoint detection
-            current_ep_count = endpoint_counter()
             if current_ep_count > last_ep_count:
                 stale_count = 0
                 last_ep_count = current_ep_count
@@ -248,26 +264,37 @@ class AiExplorer:
                 stale_count += 1
 
             if stale_count >= self.stale_threshold:
+                if not self._tried_last_resort:
+                    self._tried_last_resort = True
+                    self.console.print(
+                        f"  [yellow]AI: {self.stale_threshold} stale iterations — relaunching app for one more round[/yellow]"
+                    )
+                    self._relaunch_app()
+                    time.sleep(3)
+                    stale_count = self.stale_threshold // 2
+                    continue
                 self.console.print(
-                    f"  [yellow]AI: {self.stale_threshold} iterations with no new endpoints — stopping[/yellow]"
+                    f"  [yellow]AI: {self.stale_threshold} iterations with no new endpoints (2nd time) — stopping[/yellow]"
                 )
                 break
 
-            # Ask LLM for next action
+            # Build endpoint summary for the LLM
+            endpoint_summary = self._format_endpoint_summary(captured)
+
+            # Ask LLM for next action (with endpoint context + conversation history)
             compressed_hierarchy = self._compress_hierarchy(hierarchy_xml)
             action = self._decide_action(
                 screenshot_b64, compressed_hierarchy,
                 i, len(self._visited_hashes), current_ep_count,
+                endpoint_summary,
             )
             if not action:
-                self.console.print("  [red]AI: Failed to get action from Claude[/red]")
+                self.console.print("  [red]AI: Failed to get action from LLM[/red]")
                 continue
 
             if action.get("action") == "done":
-                if len(self._visited_hashes) < 5 and i < self.max_iterations // 2:
-                    self.console.print("  [yellow]AI: Ignoring early 'done' — only visited "
-                                       f"{len(self._visited_hashes)} screens[/yellow]")
-                    # Force it to try something instead
+                if current_ep_count < 5 and i < self.max_iterations // 2:
+                    self.console.print(f"  [yellow]AI: Ignoring early 'done' — only {current_ep_count} endpoints[/yellow]")
                     action = {"action": "swipe", "direction": "up", "reason": "Force scroll to find more content"}
                 else:
                     self.console.print(f"  [green]AI: Done — {action.get('reason', 'exploration complete')}[/green]")
@@ -281,7 +308,51 @@ class AiExplorer:
                 f"[dim](screens={len(self._visited_hashes)} eps={current_ep_count})[/dim]"
             )
             self._execute_action(action)
-            time.sleep(1.5)  # Wait for UI to settle
+            time.sleep(2)  # Wait for network calls to complete
+
+    def _format_endpoint_summary(self, endpoints: list[dict]) -> str:
+        """Format captured endpoints as a compact summary for the LLM."""
+        if not endpoints:
+            return "No API endpoints captured yet. Focus on triggering network requests."
+
+        lines = [f"CAPTURED ENDPOINTS ({len(endpoints)} total):"]
+        # Group by host
+        by_host: dict[str, list[dict]] = {}
+        for ep in endpoints:
+            host = ep.get("host", "unknown")
+            by_host.setdefault(host, []).append(ep)
+
+        for host, eps in sorted(by_host.items()):
+            lines.append(f"\n  {host}:")
+            for ep in eps:
+                method = ep.get("method", "?")
+                path = ep.get("path", "/")
+                status = ep.get("status", "")
+                status_str = f" → {status}" if status else ""
+                auth = " [AUTH]" if ep.get("auth") else ""
+                lines.append(f"    {method:6s} {path}{status_str}{auth}")
+
+        # Show uncaptured static targets
+        if self.static_endpoints:
+            captured_paths = {ep.get("path", "") for ep in endpoints}
+            uncaptured = [
+                ep.get("path", "/") for ep in self.static_endpoints
+                if ep.get("path", "") not in captured_paths
+            ]
+            # Deduplicate
+            uncaptured = sorted(set(uncaptured))
+            if uncaptured:
+                lines.append(f"\nUNCAPTURED TARGETS (found in APK binary, not yet triggered):")
+                for p in uncaptured[:20]:
+                    lines.append(f"    {p}")
+                if len(uncaptured) > 20:
+                    lines.append(f"    ... and {len(uncaptured) - 20} more")
+
+        # Keep it concise — truncate if too many
+        result = "\n".join(lines)
+        if len(result) > 3000:
+            result = result[:3000] + "\n    ... (truncated)"
+        return result
 
     def _capture_state(self) -> tuple[str | None, str]:
         """Take screenshot + dump UI hierarchy."""
@@ -413,14 +484,17 @@ class AiExplorer:
         iteration: int,
         visited_count: int,
         endpoint_count: int,
+        endpoint_summary: str,
     ) -> dict | None:
-        """Ask vision LLM to decide the next action."""
+        """Ask vision LLM to decide the next action with full endpoint context."""
         user_text = (
-            f"Iteration {iteration}. "
+            f"Iteration {iteration}/{self.max_iterations}. "
             f"Visited {visited_count} unique screens. "
-            f"Discovered {endpoint_count} API endpoints so far.\n\n"
+            f"Time remaining: {max(0, int(self._start_time + self.timeout - time.time()))}s\n\n"
+            f"{endpoint_summary}\n\n"
             f"UI Hierarchy:\n```xml\n{hierarchy}\n```\n\n"
-            f"What action should I take next? Respond with JSON only."
+            f"Based on the captured endpoints and current screen, what action will trigger NEW API calls? "
+            f"Respond with JSON only."
         )
 
         try:
@@ -428,6 +502,16 @@ class AiExplorer:
                 text = self._call_azure(screenshot_b64, user_text)
             else:
                 text = self._call_anthropic(screenshot_b64, user_text)
+
+            # Track conversation for context (text-only summaries to save tokens)
+            self._conversation.append({
+                "role": "user",
+                "content": f"[Iter {iteration}] {endpoint_count} eps. What next?"
+            })
+            self._conversation.append({"role": "assistant", "content": text})
+            # Keep last 6 exchanges
+            if len(self._conversation) > 12:
+                self._conversation = self._conversation[-12:]
 
             # Strip markdown code fences if present
             text = re.sub(r'^```(?:json)?\s*', '', text)
@@ -438,49 +522,64 @@ class AiExplorer:
             return None
 
     def _call_azure(self, screenshot_b64: str, user_text: str) -> str:
-        """Call Azure OpenAI GPT-4o with vision."""
+        """Call Azure OpenAI GPT-4o with vision + conversation history."""
+        # Build messages: system + recent history + current screenshot
+        messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+
+        # Add recent conversation history (text-only, no old images to save tokens)
+        for msg in self._conversation[-8:]:
+            messages.append(msg)
+
+        messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{screenshot_b64}",
+                        "detail": "low",
+                    },
+                },
+                {"type": "text", "text": user_text},
+            ],
+        })
+
         response = self._client.chat.completions.create(
             model="qrg-gpt4o-experimental",
-            max_tokens=256,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{screenshot_b64}",
-                                "detail": "low",
-                            },
-                        },
-                        {"type": "text", "text": user_text},
-                    ],
-                },
-            ],
+            max_tokens=300,
+            messages=messages,
         )
         return response.choices[0].message.content.strip()
 
     def _call_anthropic(self, screenshot_b64: str, user_text: str) -> str:
-        """Call Anthropic Claude Sonnet with vision."""
+        """Call Anthropic Claude Sonnet with vision + conversation history."""
+        # Build messages with recent history + current screenshot
+        messages = []
+
+        # Add recent conversation history (text-only)
+        for msg in self._conversation[-8:]:
+            messages.append(msg)
+
+        messages.append({
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": screenshot_b64,
+                    },
+                },
+                {"type": "text", "text": user_text},
+            ],
+        })
+
         response = self._client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=256,
+            max_tokens=300,
             system=_SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": screenshot_b64,
-                        },
-                    },
-                    {"type": "text", "text": user_text},
-                ],
-            }],
+            messages=messages,
         )
         return response.content[0].text.strip()
 

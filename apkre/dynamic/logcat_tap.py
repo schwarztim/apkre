@@ -22,6 +22,11 @@ _STATUS_RE = re.compile(r'statusCode:\s*(\d+)')
 _REQ_RE   = re.compile(r'requestBody:\s*(\{.*\}|\[.*\])')
 _RESP_RE  = re.compile(r'responseBody:\s*(\{.*\}|\[.*\])')
 _AUTH_RE  = re.compile(r'Authorization["\s:]+([^\s,\]]+)')
+# Broader header regex for Dio LogInterceptor(requestHeader: true) dumps
+_HEADER_AUTH_RE = re.compile(
+    r'(?:authorization|x-token|x-api-key|x-auth-token|bearer)\s*:\s*(\S+)',
+    re.IGNORECASE,
+)
 _URL_RE   = re.compile(r'https?://([^/\s?#]+)(/[^\s?#]*)?\??([^\s#]*)?')
 
 # Telemetry/analytics hosts to ignore — they flood the capture with noise
@@ -209,7 +214,9 @@ class LogcatTap:
                     pass
                 continue
 
-            m = _AUTH_RE.search(line)
+            # Primary auth capture is via Frida SSL hooks; logcat is a fallback
+            # for apps that configure Dio LogInterceptor(requestHeader: true)
+            m = _AUTH_RE.search(line) or _HEADER_AUTH_RE.search(line)
             if m and last_key and last_key in seen:
                 seen[last_key]["auth"] = True
                 seen[last_key]["token"] = m.group(1)

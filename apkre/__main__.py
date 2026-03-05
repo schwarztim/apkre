@@ -134,6 +134,7 @@ def analyze(
             checker.check(device=device)
 
     endpoints: list[dict] = []
+    static_endpoints: list[dict] = []
 
     # -- Static analysis -------------------------------------------------------
     if not dynamic_only:
@@ -151,9 +152,33 @@ def analyze(
         dart_endpoints = dart_scanner.scan()
         console.print(f"  [green]✓[/green] Dart/Flutter scan: {len(dart_endpoints)} additional endpoints")
 
+        static_endpoints = list(static_endpoints) + list(dart_endpoints)
         endpoints.extend(static_endpoints)
-        endpoints.extend(dart_endpoints)
         session.save_endpoints(endpoints, source="static")
+
+        # Display service map from static analysis
+        svc_map = EndpointMerger.service_map(static_endpoints)
+        if svc_map:
+            svc_table = Table(title="Service Map (static analysis)")
+            svc_table.add_column("Service", style="cyan")
+            svc_table.add_column("Paths", style="white", justify="right")
+            for svc, info in sorted(svc_map.items(), key=lambda x: -x[1]["total"]):
+                svc_table.add_row(svc, str(info["total"]))
+            console.print(svc_table)
+
+    # Quick static scan for AI targeting (even in dynamic-only mode)
+    if dynamic_only and ai:
+        console.print("  [dim]Quick static scan for AI targeting...[/dim]")
+        try:
+            unpacker = ApkUnpacker(apk_path, session.work_dir, device=device)
+            unpacked = unpacker.unpack()
+            scanner = StringScanner(unpacked)
+            static_endpoints = scanner.scan()
+            dart_scanner = DartScanner(unpacked)
+            static_endpoints.extend(dart_scanner.scan())
+            console.print(f"  [dim]Found {len(static_endpoints)} static paths for AI targeting[/dim]")
+        except Exception as e:
+            console.print(f"  [dim]Static scan skipped: {e}[/dim]")
 
     # -- Dynamic capture -------------------------------------------------------
     if not static_only and device:
@@ -219,7 +244,17 @@ def analyze(
                 # Restart frida-server after app init (anti-tamper window passed)
                 console.print("  [yellow]→[/yellow] Restarting frida-server...")
                 setup._root_shell("/data/local/tmp/frida-server -D &")
-                time.sleep(2)
+                # Poll frida-server readiness (up to 15s)
+                for _wait in range(15):
+                    try:
+                        import frida as _frida_check
+                        _dev = _frida_check.get_device(device) if device else _frida_check.get_usb_device()
+                        _procs = _dev.enumerate_processes()
+                        if any(p.name == pkg for p in _procs):
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(1)
 
                 console.print("  [yellow]→[/yellow] Starting background logcat + Frida capture...")
                 logcat = LogcatTap(device, console)
@@ -233,17 +268,24 @@ def analyze(
                     console.print(f"  [red]✗[/red] Frida background start failed: {e}")
                     console.print("  [dim]Continuing with logcat only...[/dim]")
 
-                def _endpoint_count():
-                    return len(logcat._lines) + len(frida_ctl._endpoints)
+                def _endpoint_feed():
+                    """Live feed of parsed endpoints from logcat + frida."""
+                    eps = []
+                    # Parse logcat lines on the fly for live feedback
+                    eps.extend(logcat._parse_lines(logcat._lines))
+                    # Frida endpoints are already parsed
+                    eps.extend(frida_ctl._endpoints)
+                    return eps
 
                 console.print("  [yellow]→[/yellow] Starting AI exploration...")
                 explorer = AiExplorer(
                     device, pkg, console,
                     max_iterations=50,
-                    stale_threshold=8,
+                    stale_threshold=12,
                     timeout=timeout,
+                    static_endpoints=static_endpoints,
                 )
-                explorer.explore(endpoint_counter=_endpoint_count)
+                explorer.explore(endpoint_feed=_endpoint_feed)
 
                 # Collect results
                 logcat_endpoints = logcat.stop()
@@ -308,6 +350,21 @@ def analyze(
     merger = EndpointMerger(endpoints)
     merged = merger.merge()
     console.print(f"  [green]✓[/green] Merged to {len(merged)} unique endpoints")
+
+    # Display coverage map (static vs captured)
+    if static_endpoints:
+        captured_paths = {ep.get("path", "") for ep in merged}
+        svc_map = EndpointMerger.service_map(static_endpoints, captured_paths=captured_paths)
+        if svc_map:
+            cov_table = Table(title="API Coverage (static → captured)")
+            cov_table.add_column("Service", style="cyan")
+            cov_table.add_column("Total", style="white", justify="right")
+            cov_table.add_column("Captured", style="green", justify="right")
+            cov_table.add_column("Remaining", style="yellow", justify="right")
+            for svc, info in sorted(svc_map.items(), key=lambda x: -x[1]["total"]):
+                remaining = info["total"] - info["captured"]
+                cov_table.add_row(svc, str(info["total"]), str(info["captured"]), str(remaining))
+            console.print(cov_table)
 
     inferrer = SchemaInferrer()
     for ep in merged:

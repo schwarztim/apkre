@@ -201,7 +201,7 @@ class FridaController:
             if pid is None:
                 if attempt < 2:
                     self.console.print(f"  [yellow]![/yellow] App not running, waiting for restart (attempt {attempt+1}/3)...")
-                    time.sleep(3)
+                    time.sleep(5)
                     continue
                 self.console.print("  [yellow]![/yellow] App not running after retries, falling back to spawn mode")
                 return self._spawn(device, agent_js, on_message)
@@ -215,8 +215,8 @@ class FridaController:
             except Exception as e:
                 if attempt < 2:
                     self.console.print(f"  [yellow]![/yellow] Frida attach failed (pid={pid}): {e}")
-                    self.console.print(f"  [dim]Retrying in 3s (attempt {attempt+1}/3)...[/dim]")
-                    time.sleep(3)
+                    self.console.print(f"  [dim]Retrying in 5s (attempt {attempt+1}/3)...[/dim]")
+                    time.sleep(5)
                 else:
                     self.console.print(f"  [yellow]![/yellow] Frida attach failed after 3 attempts: {e}")
                     self.console.print("  [dim]Continuing without Frida hooks (logcat capture still active)[/dim]")
