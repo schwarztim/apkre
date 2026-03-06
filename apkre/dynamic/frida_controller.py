@@ -193,8 +193,8 @@ class FridaController:
     def _attach(self, device, agent_js: str, on_message) -> tuple:
         """Attach to a running app instance (no restart, preserves routing).
 
-        Retries up to 3 times with PID refresh — handles the case where
-        frida-server restart causes the app to bounce and get a new PID.
+        Retries up to 3 times with PID refresh and anti-debug bypass —
+        handles the case where the app uses ptrace self-attach to block debuggers.
         """
         for attempt in range(3):
             pid = self._find_pid()
@@ -213,6 +213,15 @@ class FridaController:
                 script.load()
                 return session, pid
             except Exception as e:
+                err_msg = str(e).lower()
+                if "process not found" in err_msg:
+                    # Likely anti-debug ptrace: app spawns a child that ptrace-attaches
+                    # to the parent, blocking Frida. Kill the tracer and use spawn mode
+                    # (app usually self-destructs when tracer dies).
+                    if self._kill_anti_debug_tracer(pid):
+                        self.console.print("  [yellow]![/yellow] Anti-debug detected — falling back to spawn mode")
+                        time.sleep(2)
+                        return self._spawn(device, agent_js, on_message)
                 if attempt < 2:
                     self.console.print(f"  [yellow]![/yellow] Frida attach failed (pid={pid}): {e}")
                     self.console.print(f"  [dim]Retrying in 5s (attempt {attempt+1}/3)...[/dim]")
@@ -221,6 +230,35 @@ class FridaController:
                     self.console.print(f"  [yellow]![/yellow] Frida attach failed after 3 attempts: {e}")
                     self.console.print("  [dim]Continuing without Frida hooks (logcat capture still active)[/dim]")
                     raise
+
+    def _kill_anti_debug_tracer(self, pid: int) -> bool:
+        """Kill anti-debug child processes that ptrace-attach to the main app.
+
+        Some apps spawn a child that ptrace(PTRACE_ATTACH, parent) to prevent
+        debuggers/Frida from attaching. Detect via TracerPid in /proc/PID/status
+        and kill the tracer.
+        """
+        try:
+            result = subprocess.run(
+                ["adb", "-s", self.device_serial, "shell", "su", "-c",
+                 f"cat /proc/{pid}/status | grep TracerPid"],
+                capture_output=True, text=True, timeout=5,
+            )
+            tracer_line = result.stdout.strip()
+            if not tracer_line:
+                return False
+            tracer_pid = int(tracer_line.split()[-1])
+            if tracer_pid == 0:
+                return False
+            self.console.print(f"  [yellow]![/yellow] Anti-debug detected: TracerPid={tracer_pid} on pid={pid}")
+            subprocess.run(
+                ["adb", "-s", self.device_serial, "shell", "su", "-c", f"kill -9 {tracer_pid}"],
+                capture_output=True, timeout=5,
+            )
+            self.console.print(f"  [green]✓[/green] Killed anti-debug tracer (pid={tracer_pid})")
+            return True
+        except Exception:
+            return False
 
     def _find_pid(self) -> int | None:
         """Find PID of running package via adb."""

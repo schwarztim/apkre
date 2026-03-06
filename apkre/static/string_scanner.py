@@ -11,7 +11,7 @@ _URL_RE = re.compile(
 
 # Path template patterns like /v1/user/{id}
 _PATH_RE = re.compile(
-    r'"(/(?:v\d+/)?[a-zA-Z0-9_\-/{}]+)"'
+    r'"(/(?:v\d+/)?[a-z][a-zA-Z0-9_\-/{}]+)"'
 )
 
 # Auth header patterns
@@ -98,7 +98,7 @@ _NOISE_HOSTS = {
     "developer.apple.com", "fsf.org", "www.gnu.org",
     "earth.google.com", "gcmd.gsfc.nasa.gov", "mpgedit.org",
     # Facebook SDK
-    "www.facebook.com", "graph.facebook.com",
+    "www.facebook.com", "graph.facebook.com", "facebook.com",
     # Sentry / analytics
     "sentry.io",
     # Telemetry / analytics
@@ -121,7 +121,15 @@ _NOISE_HOSTS = {
     "ocsp.sectigo.com", "crl.sectigo.com",
     "ocsp.verisign.com", "crl.verisign.com",
     "pki.google.com", "crls.pki.goog",
+    # XML/schema namespace hosts
+    "schemas.android.com", "schemas.microsoft.com",
+    "schemas.openxmlformats.org",
+    # URL shorteners / examples
+    "goo.gl", "bit.ly", "www.example.com", "example.com",
+    # IETF / standards
+    "datatracker.ietf.org",
     # Android system
+    "www.google.com", "google.com",
     "connectivitycheck.gstatic.com",
     "clients1.google.com", "clients3.google.com",
     "www.gstatic.com", "fonts.gstatic.com",
@@ -165,6 +173,8 @@ _NOISE_PATH_PREFIXES = [
     # Catch-all short noise
     "/a", "/s", "/>", "/%s",
     "/fd/", "/raw/", "/scaled_",
+    "/thumbnail_", "/file_picker",
+    "/10", "/20",  # year-like path segments from embedded docs
     # OCSP/CRL/cert paths
     "/ocsp", "/crl/", "/pki/", "/ca/", "/cert/",
     # Schema/spec paths
@@ -205,6 +215,14 @@ def _parse_url(url: str) -> dict | None:
 
     # Filter tika:link references, XML closing tags, etc.
     if "</tika:" in url or "</url>" in url or "</_" in url:
+        return None
+
+    # Filter malformed hosts (must be valid domain-like with real TLD)
+    if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9\-]*(\.[a-zA-Z0-9\-]+)+$', host):
+        return None
+    # Filter placeholder/example hostnames
+    tld = host.rsplit(".", 1)[-1].lower()
+    if tld in {"url", "local", "internal", "invalid", "test", "localhost"}:
         return None
 
     return {"host": host, "path": path, "query": query}

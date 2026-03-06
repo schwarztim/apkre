@@ -177,6 +177,15 @@ def analyze(
             dart_scanner = DartScanner(unpacked)
             static_endpoints.extend(dart_scanner.scan())
             console.print(f"  [dim]Found {len(static_endpoints)} static paths for AI targeting[/dim]")
+            # Display pre-capture service map
+            svc_map = EndpointMerger.service_map(static_endpoints)
+            if svc_map:
+                svc_table = Table(title="Service Map (pre-capture)")
+                svc_table.add_column("Service", style="cyan")
+                svc_table.add_column("Paths", style="white", justify="right")
+                for svc, info in sorted(svc_map.items(), key=lambda x: -x[1]["total"]):
+                    svc_table.add_row(svc, str(info["total"]))
+                console.print(svc_table)
         except Exception as e:
             console.print(f"  [dim]Static scan skipped: {e}[/dim]")
 

@@ -128,28 +128,34 @@ class AiExplorer:
         """Initialize the best available vision LLM backend."""
         # Try Azure OpenAI first
         if OPENAI_AVAILABLE:
-            api_key = os.environ.get("AZURE_OPENAI_API_KEY") or _keychain_get("azure-openai", "api-key")
-            endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT") or _keychain_get("azure-openai", "api-base")
+            api_key = _keychain_get("azure-openai", "api-key") or os.environ.get("AZURE_OPENAI_API_KEY")
+            endpoint = _keychain_get("azure-openai", "api-base") or os.environ.get("AZURE_OPENAI_ENDPOINT")
             if api_key and endpoint:
                 client = AzureOpenAI(
                     api_key=api_key,
                     azure_endpoint=endpoint.rstrip("/"),
                     api_version="2024-10-21",
                 )
-                # Verify connectivity with a tiny test call
-                try:
-                    client.chat.completions.create(
-                        model="qrg-gpt4o-experimental",
-                        max_tokens=1,
-                        messages=[{"role": "user", "content": "hi"}],
-                    )
-                    self._client = client
-                    self._backend = "azure-openai"
-                    self.console.print("  [green]✓[/green] AI backend: Azure OpenAI (GPT-4o)")
-                    return True
-                except Exception as e:
-                    self.console.print(f"  [yellow]![/yellow] Azure OpenAI failed: {e}")
-                    self.console.print("  [dim]Falling back to Anthropic...[/dim]")
+                # Verify connectivity with a tiny test call (retry on transient 401)
+                for _retry in range(3):
+                    try:
+                        client.chat.completions.create(
+                            model="qrg-gpt4o-experimental",
+                            max_tokens=1,
+                            messages=[{"role": "user", "content": "hi"}],
+                        )
+                        self._client = client
+                        self._backend = "azure-openai"
+                        self.console.print("  [green]✓[/green] AI backend: Azure OpenAI (GPT-4o)")
+                        return True
+                    except Exception as e:
+                        if _retry < 2 and ("401" in str(e) or "429" in str(e)):
+                            self.console.print(f"  [dim]Azure retry {_retry+1}/3 ({e.__class__.__name__})...[/dim]")
+                            time.sleep(3 * (_retry + 1))
+                            continue
+                        self.console.print(f"  [yellow]![/yellow] Azure OpenAI failed: {e}")
+                        self.console.print("  [dim]Falling back to Anthropic...[/dim]")
+                        break
 
         # Fall back to Anthropic
         if ANTHROPIC_AVAILABLE:
@@ -280,6 +286,18 @@ class AiExplorer:
 
             # Build endpoint summary for the LLM
             endpoint_summary = self._format_endpoint_summary(captured)
+
+            # Log uncaptured targets once for visibility
+            if i == 1 and self.static_endpoints:
+                captured_paths = {ep.get("path", "") for ep in captured}
+                uncaptured = sorted({
+                    ep.get("path", "/") for ep in self.static_endpoints
+                    if ep.get("path", "") not in captured_paths
+                })
+                if uncaptured:
+                    self.console.print(f"  [dim]AI: {len(uncaptured)} UNCAPTURED TARGETS from static scan[/dim]")
+                    for p in uncaptured[:10]:
+                        self.console.print(f"  [dim]    {p}[/dim]")
 
             # Ask LLM for next action (with endpoint context + conversation history)
             compressed_hierarchy = self._compress_hierarchy(hierarchy_xml)
@@ -516,9 +534,42 @@ class AiExplorer:
             # Strip markdown code fences if present
             text = re.sub(r'^```(?:json)?\s*', '', text)
             text = re.sub(r'\s*```$', '', text)
-            return json.loads(text)
-        except (json.JSONDecodeError, Exception) as e:
-            self.console.print(f"  [red]AI: LLM response error: {e}[/red]")
+            text = text.strip()
+
+            # Try direct parse first
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+
+            # Extract first JSON object from response
+            obj_match = re.search(r'\{[^{}]*\}', text)
+            if obj_match:
+                try:
+                    return json.loads(obj_match.group())
+                except json.JSONDecodeError:
+                    pass
+
+            # Last resort: regex extraction of action fields
+            action_m = re.search(r'"action"\s*:\s*"(\w+)"', text)
+            if action_m:
+                result = {"action": action_m.group(1)}
+                for field in ("x", "y"):
+                    fm = re.search(rf'"{field}"\s*:\s*(\d+)', text)
+                    if fm:
+                        result[field] = int(fm.group(1))
+                dir_m = re.search(r'"direction"\s*:\s*"(\w+)"', text)
+                if dir_m:
+                    result["direction"] = dir_m.group(1)
+                reason_m = re.search(r'"reason"\s*:\s*"([^"]*)"', text)
+                if reason_m:
+                    result["reason"] = reason_m.group(1)
+                return result
+
+            self.console.print(f"  [red]AI: Unparseable response: {text[:100]}[/red]")
+            return None
+        except Exception as e:
+            self.console.print(f"  [red]AI: LLM error: {e}[/red]")
             return None
 
     def _call_azure(self, screenshot_b64: str, user_text: str) -> str:
