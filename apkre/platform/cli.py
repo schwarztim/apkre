@@ -256,6 +256,9 @@ def scrcpy_server(
     import os
     env = os.environ.copy()
     env["PORT"] = str(port)
+    # Ensure adb is in PATH for ws-scrcpy to spawn adb processes
+    adb_path = cfg.android_sdk / "platform-tools"
+    env["PATH"] = f"{adb_path}:/usr/bin:/usr/local/bin:{env.get('PATH', '')}"
     if foreground:
         subprocess.run(
             ["npm", "start"],
