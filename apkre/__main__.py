@@ -25,6 +25,7 @@ from apkre.device.prereq_check import PrereqChecker
 from apkre.device.setup import DeviceSetup
 from apkre.dynamic.ai_explorer import AI_AVAILABLE
 from apkre.session import Session
+from apkre.platform.cli import platform_app
 
 app = typer.Typer(
     name="apkre",
@@ -529,6 +530,8 @@ def _print_summary(endpoints: list[dict], spec_path: str, session: Session) -> N
     if session.tokens:
         console.print(f"[bold]Token(s) captured:[/bold] {len(session.tokens)}")
 
+
+app.add_typer(platform_app, name="platform")
 
 if __name__ == "__main__":
     app()
