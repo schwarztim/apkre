@@ -1,218 +1,215 @@
-# apkre — APK Reverse Engineering Platform
+# apkre
 
-Automated API discovery from Android apps. Extracts endpoints, auth tokens, request/response schemas, and generates OpenAPI 3.0 specs — all from a running app on a rooted device.
+**APK Reverse Engineering Platform** — automated API discovery from Android applications.
 
-## What It Does
+apkre extracts undocumented API endpoints, authentication tokens, and request/response schemas from Android APKs, then generates production-ready OpenAPI 3.0 specifications. It combines static decompilation with live traffic capture to handle both simple REST apps and hardened Flutter applications with stripped SSL symbols.
 
-```
-APK → Static Analysis → Dynamic Capture → OpenAPI 3.0 Spec
-                ↓               ↓
-          URL patterns    Live HTTP traffic
-          Auth strings    JWT tokens
-          Dart/Flutter    Request/response bodies
-```
+---
 
-**apkre** combines static analysis (jadx decompilation, string scanning, Dart binary extraction) with dynamic capture (Frida SSL hooks, logcat parsing, mitmproxy) to produce a complete API specification from any Android app.
+## The Problem
 
-## Quick Start
+Android apps communicate with backend APIs that are rarely documented. Security assessments, partner integrations, and competitive analysis all require understanding what endpoints exist, what authentication schemes are in use, and what data structures are exchanged — none of which is available from public documentation.
 
-```bash
-# Install (core — logcat capture works with just this)
-pip install apkre
+Manual approaches are slow and incomplete: decompiling an APK captures only hardcoded URLs, while proxying traffic misses endpoints only reachable through specific app flows. Hardened apps add certificate pinning, Dart's proxy-bypassing HTTP client, and stripped native SSL symbols that defeat standard interception.
 
-# Install with all optional dependencies
-pip install "apkre[all]"
+apkre automates the full pipeline: static analysis to establish a baseline, dynamic capture to observe real traffic, and schema inference to generate a spec that reflects the API as it actually behaves.
 
-# Analyze an installed app (auto-pulls APK from device)
-apkre analyze --package com.example.app --device <serial>
-
-# Interactive mode — capture while you use the app
-apkre analyze --package com.example.app -i
-
-# Static analysis only (no device needed)
-apkre analyze --apk app.apk --static-only
-```
+---
 
 ## Features
 
 ### Static Analysis
 
-- **APK unpacking** — handles split APKs (App Bundles) from Play Store
-- **jadx/apktool decompilation** — extracts Java source for URL scanning
-- **Dart/Flutter binary scanning** — extracts strings from `libapp.so` AOT snapshots
-- **Noise filtering** — filters out SDK URLs, XML namespaces, documentation links, telemetry endpoints
+- APK unpacking with split APK / App Bundle support (pulls architecture-specific splits from device)
+- jadx decompilation of DEX bytecode to Java source for URL and auth pattern scanning
+- Dart/Flutter AOT binary scanning — extracts API strings from `libapp.so` snapshots without execution
+- Noise filtering removes SDK endpoints, XML namespaces, telemetry URLs, and documentation links
 
 ### Dynamic Capture
 
-- **Logcat tap** — zero-setup capture for Flutter/Dio apps via `adb logcat`
-- **Frida SSL hooks** — intercepts SSL_write/SSL_read for universal HTTPS capture
-- **BoringSSL pattern scanning** — finds stripped BoringSSL symbols in Flutter's libflutter.so
-- **OkHttp Java hooks** — captures Java-based HTTP clients via Frida
-- **mitmproxy integration** — transparent proxy for non-pinned traffic
-- **Interactive mode** — real-time endpoint discovery while you use the app
+- **Logcat tap** — zero-setup capture for Flutter/Dio apps via `adb logcat`; no device modification required
+- **Frida SSL hooks** — intercepts `SSL_write`/`SSL_read` for universal HTTPS capture at the TLS layer
+- **BoringSSL symbol resolution** — locates stripped BoringSSL functions in Flutter's `libflutter.so` using ARM64 ADRP+ADD cross-reference analysis when symbols are absent
+- **OkHttp hooks** — captures Java-based HTTP clients via Frida Java bridge
+- **mitmproxy integration** — transparent proxy capture for non-pinned traffic
+- **Interactive mode** — real-time endpoint collection while manually exercising the app
 
-### Token Extraction
+### Token and Credential Extraction
 
-- **Heap dump scanning** — extracts JWT tokens from app memory
-- **SharedPreferences** — reads auth tokens from XML preference files
-- **Frida prefs dump** — enumerates SharedPreferences via Java bridge
+- Heap dump scanning for JWT tokens in app memory
+- SharedPreferences extraction from XML preference files
+- Frida-driven SharedPreferences enumeration via Java reflection
 
-### Output Formats
+### Output
 
-- **OpenAPI 3.0** — complete YAML spec with paths, methods, schemas, auth
-- **Postman Collection** — importable collection with variables and auth
-- **curl commands** — executable shell script with all discovered endpoints
+- **OpenAPI 3.0 YAML** — complete specification with paths, HTTP methods, inferred schemas, and auth configuration
+- **Postman Collection v2.1** — importable collection with environment variables and auth headers
+- **curl script** — executable shell script covering all discovered endpoints
+
+---
+
+## Architecture
+
+```
+APK / Running App
+        |
+        +---> Static Analysis                Dynamic Capture
+        |     ├── apk_unpack.py              ├── frida_controller.py
+        |     ├── string_scanner.py          │   └── frida_agent.js
+        |     └── dart_scanner.py            ├── logcat_tap.py
+        |                                    ├── mitmproxy_tap.py
+        |                                    └── token_extractor.py
+        |
+        +---> Analysis Layer
+        |     ├── endpoint_merger.py   (deduplicate, parameterize paths)
+        |     ├── schema_inferrer.py   (JSON body → JSONSchema)
+        |     └── auth_detector.py     (Bearer, Basic, API key, custom)
+        |
+        +---> Output
+              ├── openapi_builder.py   → OpenAPI 3.0 YAML
+              ├── postman_builder.py   → Postman Collection v2.1
+              └── curl_builder.py      → curl script
+```
+
+Session state persists to SQLite between runs, so partial captures can be resumed and merged.
+
+---
+
+## Flutter SSL Interception
+
+Flutter apps statically link BoringSSL inside `libflutter.so` with stripped export symbols, defeating standard Frida hooks. apkre uses a four-tier resolution strategy:
+
+**Tier 1 — Exported symbols.** Direct `SSL_write`/`SSL_read` export lookup. Works on debug builds and some custom-compiled apps.
+
+**Tier 2 — ARM64 ADRP+ADD cross-reference resolution.** BoringSSL retains error-string literals (`"SSL_write\0"`, `"SSL_read\0"`) even in stripped release builds. The Frida agent locates these strings via `Memory.scanSync`, scans `.text` for ADRP instructions targeting the string's memory page, validates the following ADD for the correct page offset, then walks backwards to find the function prologue (`STP X29, X30, [SP, #-N]!`). The resolved address is hooked directly.
+
+**Tier 3 — Prologue pattern scan.** Searches for functions matching the `STP X29, X30` + `CBZ X0` pattern (SSL null-check idiom) that also reference the target error string within their body.
+
+**Tier 4 — reFlutter APK patching.** When all runtime approaches fail, `apkre patch` rewrites `libflutter.so` to disable certificate verification and redirect Dart HTTP traffic through a local mitmproxy listener. The patched APK is reinstalled and analyzed in interactive mode.
+
+---
 
 ## Requirements
 
-### Required
+**Required**
 
 - Python 3.11+
 - `adb` (Android SDK platform-tools)
 
-### Recommended
+**Recommended**
 
-- `jadx` — for DEX decompilation (`brew install jadx`)
-- `frida` + `frida-server` on device — for SSL interception (`pip install "apkre[frida]"`)
-- Rooted Android device or emulator
+- `jadx` — DEX decompilation (`brew install jadx`)
+- Rooted Android device or rooted emulator
+- `frida-server` installed on the device matching the installed `frida` Python package version
 
-### Optional
+**Optional**
 
-- `mitmproxy` — for Java/OkHttp traffic capture (`pip install "apkre[mitmproxy]"`)
-- `genson` — for JSON schema inference (`pip install "apkre[schema]"`)
-- `reflutter` — for deeper Dart snapshot analysis
-- `strings` (binutils) — for binary string extraction
+- `mitmproxy` — transparent proxy capture for Java/OkHttp traffic
+- `genson` — JSON schema inference from captured request/response bodies
+- `reflutter` — extended Dart snapshot analysis
+- `strings` (binutils) — binary string extraction fallback
 
-## Usage
+---
 
-### Full Analysis (Static + Dynamic)
-
-```bash
-apkre analyze \
-  --package com.bambu.handy \
-  --device 00cd45debbb13445 \
-  --output api-spec.yaml \
-  --postman collection.json \
-  --curls curls.sh
-```
-
-### Interactive Capture
-
-Interact with the app while apkre records all HTTP traffic in real-time:
+## Installation
 
 ```bash
-apkre analyze --package com.example.app --interactive
-# Use the app on your phone...
-# Press Ctrl+C when done
+# Core install (logcat capture, static analysis, OpenAPI output)
+pip install apkre
+
+# With Frida support
+pip install "apkre[frida]"
+
+# With mitmproxy support
+pip install "apkre[mitmproxy]"
+
+# Full install (all optional dependencies)
+pip install "apkre[all]"
 ```
 
-### Device Setup
+---
 
-Fix common issues (clock sync, routing tables) before capture:
+## Getting Started
 
-```bash
-apkre device-setup --device <serial>
-```
-
-### Prerequisite Check
-
-Verify your environment is ready:
+### 1. Verify your environment
 
 ```bash
 apkre prereqs --device <serial> --fix
 ```
 
-## Architecture
+Checks for adb connectivity, root access, frida-server version match, clock sync, and jadx availability. The `--fix` flag attempts to resolve common issues automatically.
 
-```
-apkre/
-├── static/
-│   ├── apk_unpack.py        # APK extraction + split APK handling
-│   ├── string_scanner.py    # URL/auth pattern extraction with noise filtering
-│   └── dart_scanner.py      # Flutter/Dart AOT binary scanning
-├── dynamic/
-│   ├── frida_agent.js       # Frida 17.x SSL hooks (system + BoringSSL)
-│   ├── frida_controller.py  # Spawn/attach, inject, collect
-│   ├── logcat_tap.py        # Flutter Dio log parser with interactive mode
-│   ├── mitmproxy_tap.py     # mitmproxy flow capture
-│   └── token_extractor.py   # Heap dump + SharedPrefs + Frida prefs
-├── analysis/
-│   ├── schema_inferrer.py   # JSON → JSONSchema (genson or manual)
-│   ├── endpoint_merger.py   # Deduplicate, parameterize, merge bodies
-│   └── auth_detector.py     # Auth scheme recognition
-├── output/
-│   ├── openapi_builder.py   # → OpenAPI 3.0 YAML
-│   ├── postman_builder.py   # → Postman Collection v2.1
-│   └── curl_builder.py      # → Executable curl script
-├── device/
-│   ├── setup.py             # Clock sync, routing fix, proxy, CA install
-│   └── prereq_check.py      # Environment validation
-└── session.py               # SQLite session persistence
-```
-
-## Flutter SSL Interception
-
-Flutter apps use BoringSSL statically linked in `libflutter.so` with stripped symbols. apkre uses a three-tier strategy:
-
-### Tier 1: Exported Symbols (debug builds)
-
-Standard `SSL_write`/`SSL_read` export lookup — works on debug and some custom builds.
-
-### Tier 2: ARM64 ADRP+ADD Cross-Reference Resolution (stripped release builds)
-
-BoringSSL embeds error-reporting strings (`"SSL_write\0"`, `"SSL_read\0"`) even in stripped builds. apkre's Frida agent:
-
-1. Finds these strings via `Memory.scanSync`
-2. Scans `.text` for ARM64 ADRP instructions targeting the string's page
-3. Validates the following ADD instruction matches the page offset
-4. Walks backwards from the xref to find the function prologue (`STP X29, X30, [SP, #-N]!`)
-5. Hooks at the resolved function address
-
-### Tier 3: Prologue Pattern Scan (fallback)
-
-Searches for functions with `STP X29, X30` + `CBZ X0` (SSL null-check) pattern that also reference the target string within their body.
-
-### Tier 4: reFlutter APK Patching (nuclear option)
-
-If all runtime approaches fail:
+### 2. Run a full analysis
 
 ```bash
-apkre patch --apk app.apk --proxy 10.0.0.1
-# Rewrites libflutter.so to disable cert verification
-# Redirects all Dart HTTP traffic through your proxy
-adb install app_patched.apk
-mitmdump -p 8080 --ssl-insecure
-apkre analyze --package com.example.app --interactive
+apkre analyze \
+  --package com.example.app \
+  --device <serial> \
+  --output api-spec.yaml \
+  --postman collection.json \
+  --curls curls.sh
 ```
+
+apkre pulls the APK from the device, runs static analysis, attaches Frida for SSL interception, and launches the app. Endpoints are collected until you press Ctrl+C or the app exits.
+
+### 3. Interactive capture
+
+For apps where interesting traffic is triggered by specific user flows:
+
+```bash
+apkre analyze --package com.example.app --device <serial> --interactive
+# Use the app normally on the device
+# Press Ctrl+C when done
+```
+
+Attach mode hooks a running process without restarting it — required on LineageOS/AOSP where Frida spawn disrupts WiFi routing tables.
+
+### 4. Static analysis only (no device required)
+
+```bash
+apkre analyze --apk app.apk --static-only --output api-spec.yaml
+```
+
+### 5. Fix device routing issues before capture
+
+```bash
+apkre device-setup --device <serial>
+```
+
+Syncs the device clock, repairs WiFi routing tables, and configures the proxy if needed.
+
+---
 
 ## Frida Modes
 
-| Mode       | Flag            | Use When                                    |
-| ---------- | --------------- | ------------------------------------------- |
-| **Spawn**  | (default)       | Fresh capture, need full app lifecycle      |
-| **Attach** | `--interactive` | App already running, preserve routing/state |
+| Mode | Flag | Use When |
+|------|------|----------|
+| Spawn | (default) | Full app lifecycle capture from cold start |
+| Attach | `--interactive` | App already running; avoids process restart side effects |
 
-Attach mode hooks the running process without restarting it — critical for LineageOS/AOSP where Frida spawn breaks WiFi routing tables.
+---
 
 ## Known Limitations
 
-- **Dart HTTP bypasses system proxy** — Dart's HTTP client ignores Android's global proxy setting. Use logcat capture, Frida SSL hooks, or `apkre patch` with mitmproxy.
-- **Split APKs** — requires a connected device to pull arch-specific splits containing native libraries.
-- **ARM64 only** — BoringSSL pattern scanning currently targets ARM64 (aarch64). x86/x86_64 emulators need different instruction patterns.
+**Dart HTTP ignores the Android system proxy.** Dart's HTTP client routes directly without consulting Android's global proxy setting. Use logcat capture, Frida SSL hooks, or `apkre patch` with mitmproxy instead.
+
+**Split APKs require a connected device.** Architecture-specific native libraries live in split APKs that must be pulled from a device; they are not available in the base APK alone.
+
+**BoringSSL pattern scanning targets ARM64.** The ADRP+ADD cross-reference strategy is specific to ARM64 (aarch64). x86/x86_64 emulators require different instruction patterns or the reFlutter patch path.
+
+---
 
 ## Device Notes
 
-### LineageOS / Custom ROMs
+**LineageOS / Custom ROMs**
 
-- ADB root (`uid=0`) is default — no `su` binary needed
-- WiFi routing tables break when Frida spawns apps. Use `--interactive` mode (uses attach) or run `apkre device-setup` to fix routing.
-- Clock sync is critical — SSL cert validation fails if device clock drifts
+ADB root (`uid=0`) is available by default — no `su` binary required. Frida spawn mode disrupts WiFi routing tables on LineageOS; use `--interactive` (attach mode) or run `apkre device-setup` beforehand.
 
-### Emulators
+**Emulators**
 
-- Works with standard Android emulators (AVD) with root access
-- `frida-server` must match your architecture (x86_64 for emulator, arm64 for physical device)
-- BoringSSL pattern scanning works best on ARM64 devices; emulators may need `apkre patch` instead
+Standard Android AVDs with root access are supported. The `frida-server` binary must match the emulator architecture (x86_64 for AVD, arm64 for physical devices). BoringSSL pattern scanning is most reliable on ARM64 physical devices; emulators may require the `apkre patch` approach.
+
+---
 
 ## License
 
